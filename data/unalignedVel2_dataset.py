@@ -77,6 +77,14 @@ class UnalignedVel2Dataset(BaseDataset):
         B = torch.from_numpy(B_img)
         #B = torch.abs(B)
         B = B.float()
+        
+        mu = torch.randn(1,256)
+        logvar = torch.randn(1,256)
+        
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        
+        C = eps * std + mu
 
         #print("AB size")
         #print(A.size())
@@ -103,7 +111,7 @@ class UnalignedVel2Dataset(BaseDataset):
         #print(A.size())
         #print(B.size())
 
-        return {'A': A, 'B': B, 'A_paths': A_path, 'B_paths': B_path}
+        return {'A': A, 'B': B, 'C': C, 'A_paths': A_path, 'B_paths': B_path}
 
     def __len__(self):
         """Return the total number of images in the dataset.
