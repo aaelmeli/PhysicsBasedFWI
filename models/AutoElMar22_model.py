@@ -132,11 +132,12 @@ class AutoElMar22Model(BaseModel):
             #for name, param in self.netG.named_parameters():
             #    if 'Rho' not in name:
             #        print("name11 :", name)
-            self.optimizer_G = FullBatchLBFGS(
-                self.netG.parameters(), lr=1., history_size=10, line_search='Wolfe', debug=True)
+            ###self.optimizer_G = FullBatchLBFGS(
+            ####    self.netG.parameters(), lr=1., history_size=10, line_search='Wolfe', debug=True)
             #print("parameters list :", list(self.netG.named_parameters())[0][0])
-            #self.optimizers.append(self.optimizer_G)
+            self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=opt.lr)
             self.optimizers.append(self.optimizer_G)
+            ####self.optimizers.append(self.optimizer_G1)
             ####self.optimizers.append(self.optimizer_G2)
             self.criterionMSE = torch.nn.MSELoss(reduction='sum')
         else:
@@ -276,7 +277,7 @@ class AutoElMar22Model(BaseModel):
         self.loss_G.backward()
         
         
-    def backward_G11(self, epoch1, batch, lstart):
+    def backward_G11(self, epoch1, batch, lstart, initerror):
             
         """Calculate GAN and L1 loss for the generator"""
         #lstart = 1
@@ -441,9 +442,10 @@ class AutoElMar22Model(BaseModel):
             #print("initerror :", initerror)
             #if (currenterror < 0.4*initerror):
                 #print("backpropagating density gradient")
-            self.rho_grad = torch.unsqueeze(self.rho_grad,0)
-            self.rho_grad = self.rho_grad.cuda(self.fake_Rho.get_device())
-            self.fake_Rho.backward(self.rho_grad)
+            if (epoch1 > 500000):
+                self.rho_grad = torch.unsqueeze(self.rho_grad,0)
+                self.rho_grad = self.rho_grad.cuda(self.fake_Rho.get_device())
+                self.fake_Rho.backward(self.rho_grad)
                 
             #self.fake_Rho.retain_grad()
 
@@ -510,18 +512,18 @@ class AutoElMar22Model(BaseModel):
         ####self.optimizer_G2.zero_grad()
         self.backward_G11(epoch,batch,lstart)   
                          # calculate graidents for G
-        obj = self.loss_D_MSE
-        obj = obj
-        obj = np.array(obj)
-        obj = obj.astype(float)
-        obj = torch.from_numpy(obj)
-        obj = obj.float()
-        lamclosure = lambda : self.closure(epoch, lstart, batch, freq)
+        # obj = self.loss_D_MSE
+        # obj = obj
+        # obj = np.array(obj)
+        # obj = obj.astype(float)
+        # obj = torch.from_numpy(obj)
+        # obj = obj.float()
+        # lamclosure = lambda : self.closure(epoch, lstart, batch, freq)
         ###self.optimizer_G.step(lambda : self.closure(epoch, lstart, batch, freq))             # udpate G's weights
-        ###self.optimizer_G2.step()
-        ####self.optimizer_G1.step()
-        options = {'closure': lamclosure}
-        obj, grad, lr, _, _, _, _, _ = self.optimizer_G.step(options)
+        self.optimizer_G.step()
+        ######self.optimizer_G.step()
+        ####options = {'closure': lamclosure}
+        ####obj, grad, lr, _, _, _, _, _ = self.optimizer_G.step(options)
 
     def compute_loss_only(self):
         #lossL1 = self.criterionL1(self.fake_BT,self.real_BT)
