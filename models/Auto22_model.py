@@ -217,7 +217,7 @@ class Auto22Model(BaseModel):
         #1000 is the best model for vae
         #print("shape of real_B :", np.shape(self.real_B))
         #print("shape of fake_B :", np.shape(self.fake_B))
-        print("D_MSE :", self.loss_D_MSE)
+        # print("D_MSE :", self.loss_D_MSE)
         
         self.loss_M_MSE = self.criterionMSE(self.real_B, self.fake_B)/(diff_size[0]*diff_size[1]*diff_size[2]*diff_size[3])
         
@@ -297,7 +297,7 @@ class Auto22Model(BaseModel):
             #self.fake_B.grad = None
             #self.fake_B.grad = None
             #if (epoch1>lstart and epoch1<=lstart1):
-            self.grad = self.grad*(10**5)  #####(10**5) works for marmousi model
+            self.grad = self.grad*(10**5)  #####(10**5) works for marmousi model #Abdo:: why scaling this by 10^5
             #self.grad = torch.clip(self.grad, min=-0.1, max=0.1)
                 
             #if (epoch1>lstart1 and epoch1<=lstart2):
@@ -369,7 +369,7 @@ class Auto22Model(BaseModel):
         lossMSE = self.criterionMSE(
             self.fake_BT, self.real_B)/(diff_size[0]*diff_size[1]*diff_size[2]*diff_size[3])
         self.loss_V_MSE = lossMSE
-        print("Loss RMSE : "+str(lossMSE.cpu().float().numpy()))
+        # print("Loss RMSE : "+str(lossMSE.cpu().float().numpy()))
         #lossSSIM = metrics.structural_similarity(np.squeeze(self.fake_B.cpu().float().numpy()),np.squeeze(self.real_B.cpu().float().numpy()) )
         #print("Loss SSIM :"+str(lossSSIM))
         #loss_RMSE = torch.nn.MSELoss(self.fake_B,self.real_B)

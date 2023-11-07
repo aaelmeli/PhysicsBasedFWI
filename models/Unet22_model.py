@@ -62,6 +62,8 @@ class Unet22Model(BaseModel):
         """
         BaseModel.__init__(self, opt)
         print("number of cuda devices:", torch.cuda.device_count())
+        print("isTrain", self.isTrain)
+        
         #for i in range(3):
         #torch.cuda.set_device(1)
 
@@ -127,7 +129,7 @@ class Unet22Model(BaseModel):
             self.criterionL1 = torch.nn.L1Loss()
             self.criterionMSE = torch.nn.MSELoss(reduction='sum')
 
-    def set_input(self, input):
+    def set_input(self, input): #Abdo:: here you can play around with the data.shape to match with the new deepwave, etc.
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
 
         Parameters:
@@ -136,17 +138,27 @@ class Unet22Model(BaseModel):
         The option 'direction' can be used to swap images in domain A and domain B.
         """
         AtoB = self.opt.direction == 'AtoB'
+        
         self.real_A = input['A' if AtoB else 'B'].to(self.device1)
+        # self.real_A = torch.transpose(self.real_A,3,1)
+        print("shape of  self.real_A =", self.real_A.shape)
         self.real_B = input['B' if AtoB else 'A'].to(self.device1)
+        print("shape of  self.real_B =", self.real_B.shape)
         self.real_C = input['C'].to(self.device1)
+        print("shape of  self.real_C =", self.real_C.shape)
         #self.real_D = input['D'].to(self.device1)  
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
+        # print("shape of  self.image_paths =", self.image_paths)
 
     def forward(self,epoch1,lstart):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
         #netin1 = self.real_A[:, :, 1:800:2, :]
         if (epoch1 == 1):
             self.latent = torch.ones(1,1,1,1)
+        # down1=torch.randn(1,18,1000,200)
+        # self.real_A=down1.to(self.device1)
+
+        # print ("down1.shape",down1.shape)
         [self.fake_B,self.grad,self.latent,self.loss_D_MSE,self.down3,self.up2,self.up1] = self.netG(self.real_B,self.real_A,lstart,epoch1,self.latent,self.real_C)  # G(A)
         #self.latent = self.latent.clone().detach()
         #print("self.latent :", self.latent)
@@ -165,6 +177,8 @@ class Unet22Model(BaseModel):
         #netin1 = self.real_A[:, :, 1:800:2, :]
         #if (epoch1 == 1):
         self.latentT = torch.ones(1,1,1,1)
+        # down1=torch.randn(1,18,1000,200)
+        # self.real_A=down1.to(self.device1)
         [self.fake_BT,self.gradT,self.latentT,_,_,_,_] = self.netG(self.real_B,self.real_A,False_lstart,False_epoch,self.latentT,self.real_C)  # G(A)
         #self.fake_BT = torch.clamp(self.fake_BT,min=15.00,max=35.50)
         self.real_BT = self.real_B
@@ -200,6 +214,8 @@ class Unet22Model(BaseModel):
     def backward_G11(self, epoch1, batch, lstart):
             
         """Calculate GAN and L1 loss for the generator"""
+        #Abdo:: 
+        print("backward_G11 has been called - backpropagate physics-based gradient")
         #lstart = 1
         #lstart2 = 50
         diff_size = self.real_B.size()
@@ -297,8 +313,8 @@ class Unet22Model(BaseModel):
             #self.fake_B.grad = None
             #self.fake_B.grad = None
             #if (epoch1>lstart and epoch1<=lstart1):
-            self.grad = self.grad*(10**5)  #####(10**5) works for marmousi model
-            #self.grad = torch.clip(self.grad, min=-0.1, max=0.1)
+            self.grad = self.grad*(10**5)  #####(10**5) works for marmousi model #Abdo:: why scaling this by 10^5
+            # self.grad = torch.clip(self.grad, min=-0.1, max=0.1)
                 
             #if (epoch1>lstart1 and epoch1<=lstart2):
             #    self.grad = self.grad*(10**6)  #####(10**5) works for marmousi model
@@ -328,7 +344,7 @@ class Unet22Model(BaseModel):
         
         #print("shape of fake_B :", np.shape(self.fake_B))
         #print("shape of grad :", np.shape(self.grad))   
-        if (epoch1 % 10 == 0): 
+        if (epoch1 % 10 == 0): #Abdo:: write every epoch just to see the very first gradient. - something wrong when visualizing the velocity models
             #filen = './marmousi22/Grad20Dec2AD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             #np.save(filen, self.grad.cpu().detach().numpy())  #switch on physics based fwi
             
@@ -353,7 +369,7 @@ class Unet22Model(BaseModel):
         #    np.save('true_data.npy',self.real_A.cpu().detach().numpy())
         #    np.save('true_model.npy',self.real_B.cpu().detach().numpy())
 
-
+    #Abdo:: this is the main function for optimizing the weights of any netwrok
     def optimize_parameters(self, epoch, batch, lstart):
         self.forward(epoch,lstart)                   # compute fake images: G(A)
         # update G
@@ -366,6 +382,9 @@ class Unet22Model(BaseModel):
         #self.loss_V_L1 = lossL1
         #print("Loss L1 : "+ str(lossL1.cpu().float().numpy()))
         diff_size = self.real_B.size()
+        print ("diff_size",diff_size)
+        print ("self.real_B.shape",self.real_B.shape)
+        print ("self.fake_BT.shape",self.fake_BT.shape)
         lossMSE = self.criterionMSE(
             self.fake_BT, self.real_B)/(diff_size[0]*diff_size[1]*diff_size[2]*diff_size[3])
         self.loss_V_MSE = lossMSE
