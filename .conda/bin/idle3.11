@@ -1,0 +1,5 @@
+#!/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/PhysicsBasedFWI/.conda/bin/python3.11
+
+from idlelib.pyshell import main
+if __name__ == '__main__':
+    main()
