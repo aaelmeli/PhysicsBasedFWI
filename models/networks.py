@@ -4285,7 +4285,7 @@ class VaeMarmousi3_Net(nn.Module):
         filters = [16, 32, 64, 128, 512]
         #filters = [2, 4, 8, 16, 32]
         
-        latent_dim = 8
+        latent_dim = 16
 
         self.down1   = unetDown(int(self.in_channels), filters[0], self.is_batchnorm)
         self.down2   = unetDown(filters[0], filters[1], self.is_batchnorm)
@@ -4318,7 +4318,7 @@ class VaeMarmousi3_Net(nn.Module):
         
     def forward(self, inputs1, inputs2, lstart, epoch1, latentI, lowf):
         filters = [16, 32, 64, 128, 512]
-        latent_dim = 8
+       
         label_dsp_dim = (151,200)
         mintrue = torch.min(inputs1)
         maxtrue = torch.max(inputs1)
@@ -4327,12 +4327,13 @@ class VaeMarmousi3_Net(nn.Module):
         stdata = torch.std(inputs2)
         mindata = torch.min(inputs2)
         maxdata = torch.max(inputs2)
-        down1  = self.down1(inputs2[:,:,1:4001:4,:]/(10**3))
+        # down1  = self.down1(inputs2[:,:,1:4001:4,:]/(10**3)) 
+        down1  = self.down1(inputs2[:,:,1:4001:4,:])#why dividing the signal by 10**3 in the previouse
         down2  = self.down2(down1)
         down3  = self.down3(down2)
         down4  = self.down4(down3)
         
-        #print("shape of down4 :", np.shape(down4))
+        # print("shape of inputs2 :", np.shape(inputs2))
         
         #print("shape of down2 :", np.shape(down2))
         result = torch.flatten(down4, start_dim=1)
@@ -4341,8 +4342,10 @@ class VaeMarmousi3_Net(nn.Module):
         #result = self.com(result)
         #p = self.decoder_input1(result)
         mu = self.smu(result)
-        log_var = self.svar(result)
-        p = self.reparameterize(mu, log_var)
+        # log_var = self.svar(result)
+        sigma = self.svar(result)
+        # p = self.reparameterize(mu, log_var)
+        p = self.reparameterize(mu, sigma)
         #p = self.tanhl(p)
         #down3  = self.down3(down2)
         #down4  = self.down4(down3)s
@@ -4381,7 +4384,7 @@ class VaeMarmousi3_Net(nn.Module):
         #print("shape of f1 :", np.shape(f1))
         
         f1    = mintrue + f1*(maxtrue-mintrue)
-        f1[(inputs1==1.500)] = 1.500
+        f1[(inputs1==1500)] = 1500
         #f1     = lowf + f1
         #f1[(inputs1 == 1.510)] = 1.510
         #f1     = torch.clamp(f1,min=mintrue,max=maxtrue)
@@ -4407,11 +4410,12 @@ class VaeMarmousi3_Net(nn.Module):
             grad = torch.unsqueeze(grad,0)
             grad = torch.unsqueeze(grad,0)
         #result = torch.flatten(f1, start_dim=1)
-        #print(" shape of grad :", np.shape(grad))
+        # print(" forward solve == done")
+        # print(" shape of grad :", np.shape(grad))
 
-        return f1, grad, mu, log_var, lossT
+        return f1, grad, mu, sigma, lossT
     
-    def reparameterize(self, mu, logvar):
+    def reparameterize(self, mu, sigma):
         """
         Reparameterization trick to sample from N(mu, var) from
         N(0,1).
@@ -4419,9 +4423,13 @@ class VaeMarmousi3_Net(nn.Module):
         :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
         :return: (Tensor) [B x D]
         """
-        std = torch.exp(0.5 * logvar)
+        # std = torch.exp(0.5 * logvar)
+        std=sigma
+        # print ("std=", std)
+        # print ("mu=", mu)
         eps = torch.randn_like(std)
-        return eps * std + mu
+        # print("eps=", eps)
+        return eps * std  + mu
     
     
     # Initialization of Parameters
@@ -4443,16 +4451,16 @@ class VaeMarmousi3_Net(nn.Module):
                     
     # forward modeling to compute gradients
     def prop(self, inputs, vel, lstart, epoch1, mintrue, maxtrue, true):
-        
-        torch.cuda.set_device(4)  #RB Necessary if device <> 0
-        GPU_string='cuda:'+str(4)
+        torch.cuda.empty_cache()
+        torch.cuda.set_device(5)  #RB Necessary if device <> 0
+        GPU_string='cuda:'+str(5)
         devicek = torch.device(GPU_string)
         #torch.cuda.set_device(7)  #RB Necessary if device <> 0
         #GPU_string='cuda:'+str(7)
         #devicek = torch.device(GPU_string)
         #vel = vel.to(devicek)
         #net1out1 = mintrue + vel*(maxtrue-mintrue)
-        net1out1 = vel*1000
+        net1out1 = vel
         #net1out1 = net1out2.to(devicek)
         #net1out1 = (3550-1500)*vel+1500
         #print("---shape of vel---", str(np.shape(vel)))
@@ -4461,6 +4469,7 @@ class VaeMarmousi3_Net(nn.Module):
         net1out1 = torch.squeeze(net1out1)
         g1 = torch.arange(net1out1.size(dim=0))
         g1 = g1**2
+        #Abdo:: what is ss, why we are scaling the gradient with this (which is a sort of the velocity model)
         ss = g1.tile((200,1))
         ss = torch.transpose(ss,0,1)
 
@@ -4473,7 +4482,8 @@ class VaeMarmousi3_Net(nn.Module):
         dx = 10
         nt = 4001
         dt = 0.001
-        num_shots = 24
+        # num_shots = 24
+        num_shots = 18
         num_receivers_per_shot = 200
         num_sources_per_shot = 1
         num_dims = 2
@@ -4489,11 +4499,12 @@ class VaeMarmousi3_Net(nn.Module):
         x_r[:, :, 1] = x_r[0, :, 1].repeat(num_shots, 1)
 
         source_amplitudes_true = (deepwave.wavelets.ricker(freq, nt, dt, 1/freq)
-                                  .reshape(-1, 1, 1))
+                                #   .reshape(-1, 1, 1)
+                                  )
         #print("device ordinal :", self.devicek)
         source_amplitudes_true = source_amplitudes_true.to(devicek)
         #lstart = -1
-        num_batches = 3
+        num_batches = 2
         num_epochs = 1
         if (epoch1 > lstart):
             num_epochs = 1
@@ -4505,13 +4516,13 @@ class VaeMarmousi3_Net(nn.Module):
         #print("size of self.realA")
         # print(np.shape(self.real_A))
         sumlossinner = 0.0
-
+        ss = ss.to(devicek)
         ################data misfit calculation##########################################
 
         #net1out1 = net1out1.to(self.devicek)
 
         receiver_amplitudes_true = inputs[0,:,:,:]
-        receiver_amplitudes_true = receiver_amplitudes_true.swapaxes(0,1)
+        # receiver_amplitudes_true = receiver_amplitudes_true.swapaxes(0,1)
         receiver_amplitudes_true = receiver_amplitudes_true.to(devicek)
         #print("shape of receiver amplitudes true")
         #print(np.shape(receiver_amplitudes_true))
@@ -4538,21 +4549,21 @@ class VaeMarmousi3_Net(nn.Module):
         #net1out1 = net1out1.to(self.devicek)
         #mat2 = mat2.to(self.devicek)
         src_amps = source_amplitudes_true.repeat(
-                        1, num_shots, 1)
-        prop2 = deepwave.scalar.Propagator({'vp': mat2}, dx)
-        receiver_amplitudes_cte = prop2(src_amps,
-                                x_s.to(devicek),
-                                x_r.to(devicek), dt)
-        
+                        num_shots, 1, 1)
+        receiver_amplitudes_cte = deepwave.scalar(mat2.to(devicek), dx, dt,
+        source_amplitudes=src_amps.to(devicek),
+        source_locations=x_s.to(devicek)/dx,
+        receiver_locations=x_r.to(devicek)/dx)[-1].to(devicek)
+        receiver_amplitudes_cte=torch.transpose(receiver_amplitudes_cte,1,2)
         receiver_amplitudes_true = receiver_amplitudes_true
         
         #print("receiver_amplitudes_true :", np.shape(receiver_amplitudes_true))
         #print("receiver_amplitudes_cte :", np.shape(receiver_amplitudes_cte))
         #receiver_amplitudes_true = receiver_amplitudes_true
-        rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=0, keepdim=True)
+        rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=1, keepdim=True)
         rcv_amps_true_norm = receiver_amplitudes_true / (rcv_amps_true_max.abs() + 1e-10)
         #rcv_amps_true_norm = receiver_amplitudes_true
-        ss = ss.to(devicek)
+        
         criterion1 = torch.nn.L1Loss()
         #vgg = Vgg16().type(torch.cuda.FloatTensor)
         #criterion2 = torch.nn.MSELoss()
@@ -4569,46 +4580,55 @@ class VaeMarmousi3_Net(nn.Module):
                 #idx = idx.type(torch.LongTensor)
                 x_s = x_s.view(-1,2)[idx].view(x_s.size())
                 #RB Shuffle true's seismograms sources with same random values
-                rcv_amps_true_norm = rcv_amps_true_norm[:,idx,:]
+                rcv_amps_true_norm = rcv_amps_true_norm[idx,:,:]
                 #RB Shuffle direct wave seismograms sources with the same random values
-                receiver_amplitudes_cte = receiver_amplitudes_cte[:,idx,:]
+                receiver_amplitudes_cte = receiver_amplitudes_cte[idx,:,:]
         
                 for it in range(num_batches):
                     #if (epoch1 > lstart):
                     optimizer2.zero_grad()
                     model2 = net1out1.clone()
-                    model2 = torch.clamp(net1out1,min=mintrue*1000,max=maxtrue*1000)
+                    model2 = torch.clamp(net1out1,min=mintrue.to(devicek),max=maxtrue.to(devicek))
                     #np.save('before108.npy',net1out1.cpu().detach().numpy())
                     #net1out1 = torch.clamp(net1out1,min=2000,max=4500)
-                    prop = deepwave.scalar.Propagator({'vp': model2}, dx)
-                    batch_src_amps = source_amplitudes_true.repeat(1, num_shots_per_batch, 1)
+                    batch_src_amps = source_amplitudes_true.repeat(num_shots_per_batch, 1, 1)
                     #print("shape of batch src amps")
                     #print(np.shape(batch_src_amps))
                     ############batch_rcv_amps_true = rcv_amps_true_norm[:,it::num_batches].to(self.devicek)
-                    batch_rcv_amps_true = rcv_amps_true_norm[:,it::num_batches]
-                    batch_rcv_amps_cte = receiver_amplitudes_cte[:,it::num_batches]
-                    batch_x_s = x_s[it::num_batches].to(devicek)
+                    batch_rcv_amps_true = rcv_amps_true_norm[it::num_batches].to(devicek)
+                    batch_rcv_amps_cte = receiver_amplitudes_cte[it::num_batches].to(devicek)
+                    batch_x_s = x_s[it::num_batches,:,:].to(devicek)
                     ##################batch_x_s = x_s[it::num_batches]
                     #print("shape of batch src amps")
                     # print(np.shape(batch_x_s))
                     #####################batch_x_r = x_r[it::num_batches]
-                    batch_x_r = x_r[it::num_batches].to(devicek)
+                    batch_x_r = x_r[it::num_batches,:,:].to(devicek)
                     #print("shape of batch receiver amps")
                     # print(np.shape(batch_x_r))
-                    batch_rcv_amps_pred = prop(batch_src_amps, batch_x_s, batch_x_r, dt)
+                    batch_rcv_amps_pred = deepwave.scalar(model2.to(devicek), dx, dt,
+                    source_amplitudes=batch_src_amps.to(devicek),
+                    source_locations=batch_x_s.to(devicek)/dx,
+                    receiver_locations=batch_x_r.to(devicek)/dx)[-1].to(devicek)
                     #print("batch_rcv_amps_pred")
                     #print(np.shape(batch_rcv_amps_pred))
+                    batch_rcv_amps_pred=torch.transpose(batch_rcv_amps_pred,1,2)
+                    batch_rcv_amps_cte_max, _ = torch.abs(batch_rcv_amps_cte).max(dim=1, keepdim=True)
+                    batch_rcv_amps_cte_norm = batch_rcv_amps_cte / (batch_rcv_amps_cte_max.abs() + 1e-10)
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True) 
+                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10) 
+                    
                     batch_rcv_amps_pred = batch_rcv_amps_pred - batch_rcv_amps_cte
-                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=0, keepdim=True)
-                    # Normalize amplitudes by dividing by the maximum amplitude of each receiver
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True)
                     batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10)
-                    #batch_rcv_amps_pred_norm = batch_rcv_amps_pred 
-                    ##############batch_rcv_amps_pred_norm = batch_rcv_amps_pred
-                    
-                    #print("shape of receiver amplitudes predicted")
-                    # print(np.shape(batch_rcv_amps_pred))
+
                     lossinner1 = criterion1(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
-                    
+                    #CC functional
+                    nrsrc=num_shots_per_batch
+                    nrcv=batch_rcv_amps_pred.shape[2]
+                    lossinner1=0
+                    for isrc in range(nrsrc):
+                        for ircv in range(nrcv):
+                            lossinner1=lossinner1+1-(torch.dot(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek), batch_rcv_amps_true[isrc,:,ircv].to(devicek)))/(torch.norm(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek))*torch.norm(batch_rcv_amps_true[isrc,:,ircv].to(devicek)))                    
                     #y_true1 = vgg(torch.unsqueeze(torch.swapaxes(batch_rcv_amps_true[:,0:3,:],0,1),0))
                     #y_pred1 = vgg(torch.unsqueeze(torch.swapaxes(batch_rcv_amps_pred_norm[:,0:3,:],0,1),0))
                     #y_true2 = vgg(torch.unsqueeze(torch.swapaxes(batch_rcv_amps_true[:,3:6,:],0,1),0))
@@ -4618,8 +4638,10 @@ class VaeMarmousi3_Net(nn.Module):
                     
                     #lossinner2 = criterion1(y_pred1,y_true1) + criterion1(y_pred2,y_true2) + criterion1(y_pred3,y_true3)
                     #lossinner2 = criterion2(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
-                    lossinner = lossinner1*100
                     
+                    # lossinner = lossinner1 #why multiply by 100??!!
+                   
+                    lossinner = lossinner1
                     #y_c_features = vgg(torch.unsqueeze(batch_rcv_amps_true,0))
                     #########model2.grad[0:26,:] = 0
                     #filen = './deepwave/epoch1'+str(epoch)+'.npy'
@@ -4631,8 +4653,8 @@ class VaeMarmousi3_Net(nn.Module):
                     #p1 = torch.rand(net1out1.grad.size()).to(devicek)
                     #p1 = p1*0.00005*(torch.max(net1out1.grad)-torch.min(net1out1.grad))
                     #net1out1.grad = p1 + net1out1.grad
-                    net1out1.grad = net1out1.grad*ss
-                    net1out1.grad[(true[0,0,:,:]==1.500)] = 0
+                    net1out1.grad = net1out1.grad #Abdo:: try not multiplying with this ss and see what will happen
+                    net1out1.grad[(true[0,0,:,:]==1500)] = 0
                     #net1out1.grad[0:26,:] = 0
                     ##########optimizer2.step()
                     #epoch_loss += loss.item()
@@ -4676,8 +4698,8 @@ class VaeMarmousi_Net(nn.Module):
         #self.decoder_input1 = nn.Linear(filters[2]*125*26, latent_dim) #for marmousi 151x200
         #self.decoder_input = nn.Linear(latent_dim, filters[2]*500*102) #for marmousi 151x200
         ########self.decoder_input1 = nn.Linear(filters[3]*63*13, latent_dim) #for marmousi 101x101 ######earlier
-        self.smu = nn.Linear(filters[3]*63*13, latent_dim)
-        self.svar = nn.Linear(filters[3]*63*13, latent_dim)
+        self.smu = nn.Linear(filters[3]*63*13, latent_dim) #the mean
+        self.svar = nn.Linear(filters[3]*63*13, latent_dim) #the standard deviation
         #self.decoder_input = nn.Linear(latent_dim, filters[3]*100*26) #for marmousi 101x101
         #self.decoder_input1 = nn.Linear(filters[1]*100*18, latent_dim) #for marmousi 101x101
         self.decoder_input = nn.Linear(latent_dim, filters[3]*25*13) #for marmousi 101x101
@@ -5482,6 +5504,7 @@ class AutoMarmousi22_Net(nn.Module):
         #self.decoder_input1 = nn.Linear(filters[2]*125*26, latent_dim) #for marmousi 151x200
         #self.decoder_input = nn.Linear(latent_dim, filters[2]*500*102) #for marmousi 151x200
         self.decoder_input1 = nn.Linear(filters[3]*63*13, latent_dim) #for marmousi 101x101
+        # self.decoder_input1 = nn.Linear(filters[3]*1625, latent_dim) #Abdo:: just try to sample data in time every 2 increments
         #self.decoder_input = nn.Linear(latent_dim, filters[3]*100*26) #for marmousi 101x101
         #self.decoder_input1 = nn.Linear(filters[1]*100*18, latent_dim) #for marmousi 101x101
         self.decoder_input = nn.Linear(latent_dim, filters[3]*25*19) #for marmousi 101x101
@@ -5762,7 +5785,7 @@ class AutoMarmousi22_Net(nn.Module):
                 #RB Shuffle direct wave seismograms sources with the same random values
                 receiver_amplitudes_cte = receiver_amplitudes_cte[idx,:,:]
         
-                for it in range(1):
+                for it in range(num_batches):
                     #if (epoch1 > lstart):
                     optimizer2.zero_grad()
                     model2 = net1out1.clone()
@@ -5807,24 +5830,29 @@ class AutoMarmousi22_Net(nn.Module):
                     #batch_rcv_amps_pred_norm = batch_rcv_amps_pred 
                     ##############batch_rcv_amps_pred_norm = batch_rcv_amps_pred
                     if (epoch1 % 10 == 0):
-                        filen = './marmousi22/batch_rcv_amps_predTrans' + str(num_batches)+'ep'+str(epoch1)+'.npy'      
+                        filen = './autoencoderccL1/batch_rcv_amps_predTrans' + str(num_batches)+'ep'+str(epoch1)+'.npy'      
                         np.save(filen, batch_rcv_amps_pred.cpu().detach().numpy()) 
-                        filen = './marmousi22/batch_rcv_amps_cte' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                        filen = './autoencoderccL1/batch_rcv_amps_cte' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
                         np.save(filen, batch_rcv_amps_cte.cpu().detach().numpy())
-                        filen = './marmousi22/batch_rcv_amps_true' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                        filen = './autoencoderccL1/batch_rcv_amps_true' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
                         np.save(filen, batch_rcv_amps_true.cpu().detach().numpy())
-                        filen = './marmousi22/batch_rcv_amps_pred_norm' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                        filen = './autoencoderccL1/batch_rcv_amps_pred_norm' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
                         np.save(filen, batch_rcv_amps_pred_norm.cpu().detach().numpy()) 
                     #print("shape of receiver amplitudes predicted")
                     # print(np.shape(batch_rcv_amps_pred))
-                    lossinner1 = criterion1(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
-                    
+                    lossinner2 = criterion1(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
+                    nrsrc=num_shots_per_batch
+                    nrcv=batch_rcv_amps_pred.shape[2]
+                    lossinner1=0
+                    for isrc in range(nrsrc):
+                        for ircv in range(nrcv):
+                            lossinner1=lossinner1+1-(torch.dot(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek), batch_rcv_amps_true[isrc,:,ircv].to(devicek)))/(torch.norm(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek))*torch.norm(batch_rcv_amps_true[isrc,:,ircv].to(devicek)))
                     #neg_logvar = torch.clamp(lvar, min=-20, max=20)  # prevent nan loss
                     #loss = torch.exp(neg_logvar) * torch.pow(tr2 - tr1, 2) - neg_logvar
                     #self.loss_D_MSE = loss.mean()
                     
                     #lossinner2 = criterion2(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
-                    lossinner = lossinner1
+                    lossinner = lossinner1 - 1/lossinner2 #Abdo: combination of L1 and CC functions
                     print ("dataloss =",lossinner.item())
                     #y_c_features = vgg(torch.unsqueeze(batch_rcv_amps_true,0))
                     #########model2.grad[0:26,:] = 0
@@ -6054,8 +6082,8 @@ class UnetMarmousi22_Net(nn.Module):
         # print(torch.cuda.memory_summary())
         torch.cuda.empty_cache()
         # print(torch.cuda.memory_summary())
-        torch.cuda.set_device(4)  #RB Necessary if device <> 0
-        GPU_string='cuda:'+str(4)
+        torch.cuda.set_device(7)  #RB Necessary if device <> 0
+        GPU_string='cuda:'+str(7)
         # GPU_string='cpu'
         # print(torch.cuda.memory_summary())
         devicek = torch.device(GPU_string)
@@ -6257,13 +6285,13 @@ class UnetMarmousi22_Net(nn.Module):
                     #print(np.shape(batch_rcv_amps_pred))
                     # Normalize amplitudes by dividing by the maximum amplitude of each receiver
                     if (epoch1 % 10 == 0):
-                        filen = './unet22/batch_rcv_amps_predTrans' + str(num_batches)+'ep'+str(epoch1)+'.npy'      
+                        filen = './unet2/batch_rcv_amps_predTrans' + str(num_batches)+'ep'+str(epoch1)+'.npy'      
                         np.save(filen, batch_rcv_amps_pred.cpu().detach().numpy()) 
-                        filen = './unet22/batch_rcv_amps_cte' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                        filen = './unet2/batch_rcv_amps_cte' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
                         np.save(filen, batch_rcv_amps_cte.cpu().detach().numpy())
-                        filen = './unet22/batch_rcv_amps_true' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                        filen = './unet2/batch_rcv_amps_true' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
                         np.save(filen, batch_rcv_amps_true.cpu().detach().numpy())
-                        filen = './unet22/batch_rcv_amps_pred_norm' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                        filen = './unet2/batch_rcv_amps_pred_norm' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
                         np.save(filen, batch_rcv_amps_pred_norm.cpu().detach().numpy())                      
                     # filen = './unet22/batch_rcv_amps_predTrans' + str(num_batches)+'ep'+str(epoch1)+'.npy'      
                     # np.save(filen, batch_rcv_amps_pred.cpu().detach().numpy())  
@@ -6273,7 +6301,12 @@ class UnetMarmousi22_Net(nn.Module):
                     #print("shape of receiver amplitudes predicted")
                     # print(np.shape(batch_rcv_amps_pred))
                     lossinner1 = criterion1(batch_rcv_amps_pred_norm.to(devicek), batch_rcv_amps_true.to(devicek))
-                    
+                    # nrsrc=num_shots_per_batch
+                    # nrcv=batch_rcv_amps_pred.shape[2]
+                    # lossinner1=0
+                    # for isrc in range(nrsrc):
+                    #     for ircv in range(nrcv):
+                    #         lossinner1=lossinner1+1-(torch.dot(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek), batch_rcv_amps_true[isrc,:,ircv].to(devicek)))/(torch.norm(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek))*torch.norm(batch_rcv_amps_true[isrc,:,ircv].to(devicek)))
                     #neg_logvar = torch.clamp(lvar, min=-20, max=20)  # prevent nan loss
                     #loss = torch.exp(neg_logvar) * torch.pow(tr2 - tr1, 2) - neg_logvar
                     #self.loss_D_MSE = loss.mean()
@@ -6289,7 +6322,8 @@ class UnetMarmousi22_Net(nn.Module):
                     #########if (epoch1 > lstart):
                     lossinner.backward()
 
-                    net1out1.grad = net1out1.grad * ss
+                    # net1out1.grad = net1out1.grad * ss
+                    net1out1.grad = net1out1.grad
                     net1out1.grad[(true[0,0,:,:]==1500)] = 0  #forcing this may confuse the gradiet making it hard to accurately updating the network
                     # net1out1.grad[0:26,:] = 0
                     ##########optimizer2.step()

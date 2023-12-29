@@ -141,11 +141,11 @@ class Unet22Model(BaseModel):
         
         self.real_A = input['A' if AtoB else 'B'].to(self.device1)
         # self.real_A = torch.transpose(self.real_A,3,1)
-        print("shape of  self.real_A =", self.real_A.shape)
+        # print("shape of  self.real_A =", self.real_A.shape)
         self.real_B = input['B' if AtoB else 'A'].to(self.device1)
-        print("shape of  self.real_B =", self.real_B.shape)
+        # print("shape of  self.real_B =", self.real_B.shape)
         self.real_C = input['C'].to(self.device1)
-        print("shape of  self.real_C =", self.real_C.shape)
+        # print("shape of  self.real_C =", self.real_C.shape)
         #self.real_D = input['D'].to(self.device1)  
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
         # print("shape of  self.image_paths =", self.image_paths)
@@ -215,7 +215,7 @@ class Unet22Model(BaseModel):
             
         """Calculate GAN and L1 loss for the generator"""
         #Abdo:: 
-        print("backward_G11 has been called - backpropagate physics-based gradient")
+        # print("backward_G11 has been called - backpropagate physics-based gradient")
         #lstart = 1
         #lstart2 = 50
         diff_size = self.real_B.size()
@@ -304,7 +304,7 @@ class Unet22Model(BaseModel):
         lstart2 = 60
         
         if (epoch1>lstart):
-            print("2nd epoch1 :", epoch1)
+            # print("2nd epoch1 :", epoch1)
             #self.loss_G.backward(retain_graph=True)
             #self.optimizer_G.zero_grad()
             #maxb = torch.max(torch.abs(self.fake_B.grad))
@@ -348,19 +348,19 @@ class Unet22Model(BaseModel):
             #filen = './marmousi22/Grad20Dec2AD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             #np.save(filen, self.grad.cpu().detach().numpy())  #switch on physics based fwi
             
-            filen = './unet22/Grad2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+            filen = './unet2/Grad2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             np.save(filen, self.grad.cpu().detach().numpy())  #switch on physics based fwi
         
             #filen = './marmousi22/Fake20Dec2AD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             #np.save(filen, self.fake_B.cpu().detach().numpy())  #switch on physics based fwi
             
-            filen = './unet22/Fake2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+            filen = './unet2/Fake2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             np.save(filen, self.fake_B.cpu().detach().numpy())  #switch on physics based fwi
             
             #filen = './marmousi22/Real20Dec2AD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             #np.save(filen, self.real_B.cpu().detach().numpy())  #switch on physics based fwi
             
-            filen = './unet22/Real2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+            filen = './unet2/Real2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             np.save(filen, self.real_B.cpu().detach().numpy())  #switch on physics based fwi
         
         #filen = './marmousi/RealAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
@@ -382,9 +382,9 @@ class Unet22Model(BaseModel):
         #self.loss_V_L1 = lossL1
         #print("Loss L1 : "+ str(lossL1.cpu().float().numpy()))
         diff_size = self.real_B.size()
-        print ("diff_size",diff_size)
-        print ("self.real_B.shape",self.real_B.shape)
-        print ("self.fake_BT.shape",self.fake_BT.shape)
+        # print ("diff_size",diff_size)
+        # print ("self.real_B.shape",self.real_B.shape)
+        # print ("self.fake_BT.shape",self.fake_BT.shape)
         lossMSE = self.criterionMSE(
             self.fake_BT, self.real_B)/(diff_size[0]*diff_size[1]*diff_size[2]*diff_size[3])
         self.loss_V_MSE = lossMSE

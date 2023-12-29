@@ -217,7 +217,7 @@ class Auto22Model(BaseModel):
         #1000 is the best model for vae
         #print("shape of real_B :", np.shape(self.real_B))
         #print("shape of fake_B :", np.shape(self.fake_B))
-        # print("D_MSE :", self.loss_D_MSE)
+        print("D_MSE :", self.loss_D_MSE)
         
         self.loss_M_MSE = self.criterionMSE(self.real_B, self.fake_B)/(diff_size[0]*diff_size[1]*diff_size[2]*diff_size[3])
         
@@ -288,7 +288,7 @@ class Auto22Model(BaseModel):
         lstart2 = 60
         
         if (epoch1>lstart):
-            print("2nd epoch1 :", epoch1)
+            # print("2nd epoch1 :", epoch1)
             #self.loss_G.backward(retain_graph=True)
             #self.optimizer_G.zero_grad()
             #maxb = torch.max(torch.abs(self.fake_B.grad))
@@ -332,19 +332,19 @@ class Auto22Model(BaseModel):
             #filen = './marmousi22/Grad20Dec2AD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             #np.save(filen, self.grad.cpu().detach().numpy())  #switch on physics based fwi
             
-            filen = './marmousi22/Grad2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+            filen = './autoencoderccL1/Grad2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             np.save(filen, self.grad.cpu().detach().numpy())  #switch on physics based fwi
         
             #filen = './marmousi22/Fake20Dec2AD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             #np.save(filen, self.fake_B.cpu().detach().numpy())  #switch on physics based fwi
             
-            filen = './marmousi22/Fake2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+            filen = './autoencoderccL1/Fake2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             np.save(filen, self.fake_B.cpu().detach().numpy())  #switch on physics based fwi
             
             #filen = './marmousi22/Real20Dec2AD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             #np.save(filen, self.real_B.cpu().detach().numpy())  #switch on physics based fwi
             
-            filen = './marmousi22/Real2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+            filen = './autoencoderccL1/Real2JanAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             np.save(filen, self.real_B.cpu().detach().numpy())  #switch on physics based fwi
         
         #filen = './marmousi/RealAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
@@ -380,7 +380,7 @@ class Auto22Model(BaseModel):
     def update_epoch(self, epoch):
         # update epoch number
         self.epoch1 = epoch
-        print("epoch numbers : "+str(self.epoch1))
+        # print("epoch numbers : "+str(self.epoch1))
 
 
 
