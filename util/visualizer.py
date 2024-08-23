@@ -56,17 +56,19 @@ def save_matrix(visuals, image_path, mnumber, aspect_ratio=1.0, width=256):
 
     This function will save images stored in 'visuals' to the HTML file specified by 'webpage'.
     """
-    image_dir = '/disk/student/adhara/Fall2021/FCNVMB-Deep-learning-based-seismic-velocity-model-building/Output' + str(mnumber)
+    image_dir = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/PhysicsBasedFWI/VaeVelCurvA2/Output' + str(mnumber)
     short_path = ntpath.basename(image_path[0])
+    # print ("image_path = ", image_path)
     name = os.path.splitext(short_path)[0]
 
     #webpage.add_header(name)
     #ims, txts, links = [], [], []
 
     for label, im_data in visuals.items():
+        # print ("label=",label,"im_data",im_data)
         image_tensor = im_data.data
         np_matrix = image_tensor[0].cpu().float().numpy()
-        print("np_matrix :", np_matrix)
+        # print("np_matrix :", np_matrix)
         image_name = '%s_%s.npy' % (name, label)
         save_path = os.path.join(image_dir, image_name)
         np.save(save_path,np_matrix)
@@ -222,9 +224,10 @@ class Visualizer():
         if not hasattr(self, 'plot_data'):
             self.plot_data = {'X': [], 'Y': [], 'legend': list(losses.keys())}
         self.plot_data['X'].append(epoch + counter_ratio)
+        # print("")
         self.plot_data['Y'].append([losses[k] for k in self.plot_data['legend']])
-        #print(self.plot_data['X'])
-        #print(self.plot_data['Y'])
+        # print("X data",self.plot_data['X'])
+        # print("y data",self.plot_data['Y'])
         try:
             self.vis.line(
                 X=np.stack([np.array(self.plot_data['X'])] * len(self.plot_data['legend']), 1),
@@ -251,7 +254,7 @@ class Visualizer():
         """
         message = '(epoch: %d, iters: %d) ' % (epoch, iters)
         for k, v in losses.items():
-            message += '%s: %.3f ' % (k, v)
+            message += '%s: %.6f ' % (k, v)
 
         print(message)  # print the message
         with open(self.log_name, "a") as log_file:

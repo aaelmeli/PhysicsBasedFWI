@@ -40,7 +40,9 @@ class UnalignedVelABCD2TestDataset(BaseDataset):
         #self.F_paths = sorted(make_dataset(self.dir_F, opt.max_dataset_size)) 
         
         self.A_size = len(self.A_paths)  # get the size of dataset A
+        # print ("self.A_size",self.A_size)
         self.B_size = len(self.B_paths)  # get the size of dataset B
+        # print ("self.B_size",self.B_size)
         self.C_size = len(self.C_paths)  # get the size of dataset C
         self.D_size = len(self.D_paths)
         #self.E_size = len(self.E_paths)
@@ -99,7 +101,7 @@ class UnalignedVelABCD2TestDataset(BaseDataset):
         #A_img = np.expand_dims(A_img,0)
         B_img = np.expand_dims(B_img,0)
         C_img = np.expand_dims(C_img,0)
-        #D_img = np.expand_dims(D_img,0)
+        D_img = np.expand_dims(D_img,0)
         A = torch.from_numpy(A_img)
         #A = torch.abs(A)
         A = A.float()
@@ -149,6 +151,11 @@ class UnalignedVelABCD2TestDataset(BaseDataset):
         #print("sizes")
         #print(A.size())
         #print(B.size())
+        
+        # print("A_img shape=",A_img.shape)
+        # print("B_img shape=",B_img.shape)
+        # print("C_img shape=",C_img.shape)
+        # print("D_img shape=",D_img.shape)
 
         return {'A':A, 'B': B, 'C':C, 'D':D, 'A_paths': A_path, 'B_paths': B_path}
 

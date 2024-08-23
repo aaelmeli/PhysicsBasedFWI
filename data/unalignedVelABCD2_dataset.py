@@ -96,6 +96,7 @@ class UnalignedVelABCD2Dataset(BaseDataset):
         B_img = B_img/1.0
         C_img = C_img/1.0
 
+        # print("D_img shape=",D_img.shape)
         r = random.randint(0,1)
         
         # print("shape of A 1:", np.shape(A_img)) #Abdo:: the actual size of the seismic data input
@@ -108,7 +109,7 @@ class UnalignedVelABCD2Dataset(BaseDataset):
         #A_img = np.expand_dims(A_img,0)
         B_img = np.expand_dims(B_img,0)
         C_img = np.expand_dims(C_img,0)
-        #D_img = np.expand_dims(D_img,0)
+        D_img = np.expand_dims(D_img,0)
         A = torch.from_numpy(A_img)
         #A = torch.abs(A)
         A = A.float()
@@ -152,6 +153,11 @@ class UnalignedVelABCD2Dataset(BaseDataset):
         #print("sizes")
         #print(A.size())
         #print(B.size())
+        
+        # print("A_img shape=",A_img.shape)
+        # print("B_img shape=",B_img.shape)
+        # print("C_img shape=",C_img.shape)
+        # print("D_img shape=",D_img.shape)
 
         return {'A': A,'B': B, 'C':C, 'D':D, 'A_paths': A_path, 'B_paths': B_path}
 

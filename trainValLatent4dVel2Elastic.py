@@ -32,7 +32,7 @@ if __name__ == '__main__':
     #ray.init()
     print('run till here 0')
     opt = TrainOptions().parse()   # get training options
-    print('run till here 1')
+    # print('run till here 1')
     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
     dataset2 = create_dataset2(opt) #create dataset for validation
     dataset_size = len(dataset)    # get the number of images in the dataset.
@@ -52,6 +52,7 @@ if __name__ == '__main__':
     InitErr = 0
     CurrentErr = 0
     epp = 0
+
     for epoch in range(opt.epoch_count, opt.n_epochs + opt.n_epochs_decay + 1):    # outer loop for different epochs; we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>
          epp = epp + 1
          epoch_start_time = time.time()  # timer for entire epoch
@@ -70,6 +71,7 @@ if __name__ == '__main__':
 
          #model.update_epoch(epoch)
          model.train()
+        #  print("just after entering training mode")
          model.update_learning_rate()    # update learning rates in the beginning of every epoch.
          Modelloss = 0.0
          Dataloss = 0.0
@@ -78,16 +80,21 @@ if __name__ == '__main__':
          Vploss = 0.0
          Vsloss = 0.0
          Rholoss = 0.0
+        #  print("just before the training loop ")
          for i, data in enumerate(dataset):  # inner loop within one epoch
-             ##print("i: " + str(i))
+            #  print(" data i: " + str(i))
              iter_start_time = time.time()  # timer for computation per iteration
              if total_iters % opt.print_freq == 0:
                  t_data = iter_start_time - iter_data_time
 
              total_iters += opt.batch_size
              epoch_iter += opt.batch_size
+            #  print ("just before setting the inputs")
              model.set_input(data)         # unpack data from dataset and apply preprocessing
-             model.optimize_parameters(epoch,i,lstart,freqL[mop],InitErr,CurrentErr,mop)   # calculate loss functions, get gradients, update network weights
+            #  print ("just after setting the inputs")
+            #  model.optimize_parameters(epoch,i,lstart,freqL[mop],InitErr,CurrentErr,mop)   # calculate loss functions, get gradients, update network weights
+            #  print("just before starting training optimization at epoch =",epoch, "and ith data = ",i)
+             model.optimize_parameters(epoch,i,lstart,freqL[mop],InitErr,CurrentErr) 
              CurrentErr = model.loss_D_MSE
              if (epoch == 1):
                  InitErr = model.loss_D_MSE
@@ -98,8 +105,10 @@ if __name__ == '__main__':
 
              iter_data_time = time.time()
              Modelloss = Modelloss + model.loss_M_MSE.item()
+             print("model.loss_M_MSE.item()",model.loss_M_MSE.item())
+             print("Modelloss",Modelloss)
              Dataloss = Dataloss + model.loss_D_MSE
-             print("loss_D_MSE :", model.loss_D_MSE)
+            #  print("loss_D_MSE :", model.loss_D_MSE)
              Vploss = Vploss + model.loss_VP.item()
              Vsloss = Vsloss + model.loss_VS.item()
              Rholoss = Rholoss + model.loss_RHO.item()
@@ -123,7 +132,7 @@ if __name__ == '__main__':
              #Model1loss = Model1loss + model.loss_M1_MSE
                  
                 
-             KLloss = KLloss + model.loss_K_MSE
+             KLloss = KLloss + model.loss_K_MSE.item()
              #KLloss = KLloss + model.loss_K_MSE
 
 
@@ -144,13 +153,21 @@ if __name__ == '__main__':
             losses1['Dataloss'] = Dataloss/(i+1)
             losses1['Validationloss'] = Validationloss/(k+1)
             #losses1['Model1loss'] = Model1loss/(i+1)
-            losses1['KL divergence'] = KLloss/(i+1)
+            losses1['KLdivergence'] = KLloss/(i+1)
             losses1['Vp'] = Vploss/(i+1)
             losses1['Vs'] = Vsloss/(i+1)
             losses1['Rho'] = Rholoss/(i+1)
             #print(losses1)
             #losses2 = model.get_current_losses()
             #print(losses2)
+
+            latentSize=model.log_var_vsp.size(dim=1)
+            for latenti in range(1,latentSize+1):
+                losses1['latentsigma'+str(latenti)] = np.exp(0.5*model.log_var_vsp.cpu().detach()[:,latenti-1].item())
+                # losses1['latentsigma'+str(latenti)] = np.exp(0.5*model.log_var.cpu().detach()[latenti-1].item())
+            for latenti in range(1,latentSize+1):
+                losses1['latentmean'+str(latenti)] = model.mu_vsp.cpu().detach()[:,latenti-1].item()
+                # losses1['latentmean'+str(latenti)] = model.mu.cpu().detach()[latenti-1].item()
             visualizer.plot_current_losses(epoch, 0, losses1)
             visualizer.print_current_losses(epoch, epoch_iter, losses1)
             

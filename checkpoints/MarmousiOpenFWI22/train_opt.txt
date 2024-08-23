@@ -25,13 +25,13 @@
                 lambda_L1: 1.0                           
                 load_iter: 0                             	[default: 0]
                 load_size: 286                           
-                       lr: 0.005                         	[default: 0.0002]
+                       lr: 0.003                         	[default: 0.0002]
            lr_decay_iters: 50                            
                 lr_policy: linear                        
          max_dataset_size: inf                           
                     model: Auto22                        	[default: cycle_gan]
                  n_epochs: 5000                          	[default: 100]
-           n_epochs_decay: 500                           	[default: 100]
+           n_epochs_decay: 0                             	[default: 100]
                n_layers_D: 3                             
                      name: MarmousiOpenFWI22             	[default: experiment_name]
                       ndf: 64                            

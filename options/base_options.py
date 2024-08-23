@@ -71,17 +71,19 @@ class BaseOptions():
 
         # get the basic options
         opt, _ = parser.parse_known_args()
-        print("model options set 1")
+        # print("model options set 1")
 
         # modify model-related parser options
         model_name = opt.model
+        print("model name=",model_name)
         model_option_setter = models.get_option_setter(model_name)
+        print("model_option_setter=",model_option_setter)
         parser = model_option_setter(parser, self.isTrain)
         print(opt.dataset_mode)
         opt, _ = parser.parse_known_args()  # parse again with new defaults
         print(opt.dataset_mode)
 
-        print("model options set 2")
+        # print("model options set 2")
         print(opt.dataset_mode)
         # modify dataset-related parser options
         dataset_name = opt.dataset_mode

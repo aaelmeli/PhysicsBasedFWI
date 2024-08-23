@@ -68,8 +68,11 @@ class VaeModel(BaseModel):
         #os.environ['CUDA_VISIBLE_DEVICES'] = "2,3,4,5,6,7"
         #ray.init(num_cpus=48,num_gpus=6)
 
+
         self.device1 = torch.device('cuda:{}'.format(
              self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')
+        self.gamma=[]
+        self.gamma.append(1)
         # self.device2 = torch.device('cuda:{}'.format(
         #     self.gpu_ids[1])) if self.gpu_ids else torch.device('cpu')
         # self.device3 = torch.device('cuda:{}'.format(
@@ -140,7 +143,7 @@ class VaeModel(BaseModel):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
         #netin1 = self.real_A[:, :, 1:800:2, :]
         #lstart = 1
-        [self.fake_B, self.mu, self.log_var, self.grad] = self.netG(self.real_B,self.real_A,lstart,epoch1,self.real_B,self.real_C)  # G(A)
+        [self.fake_B, self.mu, self.log_var, self.grad, self.loss_D_MSE] = self.netG(self.real_B,self.real_A,lstart,epoch1,self.real_B,self.real_C)  # G(A)
         # print(np.shape(self.fake_B))
         # print(self.fake_B.get_device())
 
@@ -150,7 +153,7 @@ class VaeModel(BaseModel):
         False_lstart = 1
         False_epoch = -1
         #netin1 = self.real_A[:, :, 1:800:2, :]
-        [self.fake_BT, self.muT, self.log_varT, self.gradT] = self.netG(self.real_B,self.real_A,False_lstart,False_epoch,self.real_B,self.real_C)  # G(A)
+        [self.fake_BT, self.muT, self.log_varT, self.gradT,_] = self.netG(self.real_B,self.real_A,False_lstart,False_epoch,self.real_B,self.real_C)  # G(A)
         #self.fake_BT = torch.clamp(self.fake_BT,min=15.00,max=35.50)
         self.real_BT = self.real_B
         #self.real_C = self.real_BT
@@ -281,9 +284,9 @@ class VaeModel(BaseModel):
         self.loss_M1_MSE = 0.0
 
         
-        self.loss_D_MSE = 0.0
+        # self.loss_D_MSE = 0.0
         #print("shape of real_C :", np.shape(self.real_C))
-        print("shape of fake_B :", np.shape(self.fake_B))
+        # print("shape of fake_B :", np.shape(self.fake_B))
         #1000 is the best model for vae
         self.loss_M_MSE = self.criterionMSE(self.real_B, self.fake_B)/(diff_size[0]*diff_size[1]*diff_size[2]*diff_size[3])
         #k
@@ -335,19 +338,21 @@ class VaeModel(BaseModel):
             lambda2 = 0.5
             
         #self.fake_B.retain_grad()
+        self.gamma.append(self.loss_K_MSE.item()/self.loss_D_MSE.item())
 
         
-        self.loss_G = lambda1 * self.loss_M_MSE + self.loss_K_MSE 
+        self.loss_G = lambda1 * self.loss_M_MSE + self.loss_K_MSE
         ####self.loss_G = lambda2 * self.loss_M1_MSE
+        #ABDO::comment the following line when not using pinn fwi
         self.loss_G.backward(retain_graph=True)
-        ####self.loss_G.backward()
+        # self.loss_G.backward()
         
         #maxb = torch.max(torch.abs(self.fake_B.grad))
         
         #print("maxb :", maxb)
         lstart1 = 35
         lstart2 = 60
-        
+        #ABDO::comment the following line when not using pinn fwi
         if (epoch1>lstart):
             #maxg = torch.max(torch.abs(self.grad))
         
@@ -361,8 +366,11 @@ class VaeModel(BaseModel):
             #     self.grad = torch.clip(self.grad, min=-0.2, max=0.2)
                 
             # if (epoch1>lstart2):
-            self.grad = self.grad*(10**6)   #####(10**5) works for marmousi model
-            self.grad = torch.clip(self.grad, min=-0.1, max=0.1)
+            #ABDO::comment the following two lines when not using pinn fwi
+            # print("scaling and clipping the gradient")
+            self.grad = self.grad*(10**9)   #####(10**5) works for marmousi model
+            # self.grad = torch.clip(self.grad, min=-0.1, max=0.1)
+
             #self.fake_B.backward(self.grad)
             #self.grad = (self.grad-1600)/(2300-1600)
             #self.grad = tgm.image.gaussian_blur(self.grad, (5, 5), (10, 10))
@@ -380,20 +388,23 @@ class VaeModel(BaseModel):
         #print("shape of self grad :", np.shape(self.grad))
         
         #self.grad = self.grad/torch.max(self.grad.abs())
-            self.fake_B.backward(self.grad) #switch on for physics based fwi
+
+        #ABDO::comment the following line when not using pinn fwi
+        self.fake_B.backward(self.grad) #switch on for physics based fwi
         
         
         #print("shape of fake_B :", np.shape(self.fake_B))
         #print("shape of grad :", np.shape(self.grad))   
         if (epoch1 % 1 == 0): 
-            filen = './marmousi/GradAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
-            np.save(filen, self.grad.cpu().detach().numpy())  #switch on physics based fwi
-        
-            filen = './marmousi/FakeAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
-            np.save(filen, self.fake_B.cpu().detach().numpy())  #switch on physics based fwi
+            if (batch %50 == 0):
+                filen = './VaeVelCurvA14/GradAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                np.save(filen, self.grad.cpu().detach().numpy())  #switch on physics based fwi
             
-            filen = './marmousi/RealAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
-            np.save(filen, self.real_B.cpu().detach().numpy())  #switch on physics based fwi
+                filen = './VaeVelCurvA14/FakeAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                np.save(filen, self.fake_B.cpu().detach().numpy())  #switch on physics based fwi
+                
+                filen = './VaeVelCurvA14/RealAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                np.save(filen, self.real_B.cpu().detach().numpy())  #switch on physics based fwi
         
         #filen = './marmousi/RealAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
         #np.save(filen, self.real_B.cpu().detach().numpy())  #switch on physics based fwi
@@ -417,7 +428,7 @@ class VaeModel(BaseModel):
         lossMSE = self.criterionMSE(
             self.fake_BT, self.real_BT)/(diff_size[0]*diff_size[1]*diff_size[2]*diff_size[3])
         self.loss_V_MSE = lossMSE
-        print("Loss RMSE : "+str(lossMSE.cpu().float().numpy()))
+        # print("Loss RMSE : "+str(lossMSE.cpu().float().numpy()))
         #lossSSIM = metrics.structural_similarity(np.squeeze(self.fake_B.cpu().float().numpy()),np.squeeze(self.real_B.cpu().float().numpy()) )
         #print("Loss SSIM :"+str(lossSSIM))
         #loss_RMSE = torch.nn.MSELoss(self.fake_B,self.real_B)

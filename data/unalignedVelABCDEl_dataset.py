@@ -78,13 +78,13 @@ class UnalignedVelABCDElDataset(BaseDataset):
         B_img = B_img
         A_img = A_img
         
-        print("shape of B_img :", np.shape(B_img))
-        print("shape of C_img :", np.shape(C_img))
+        # print("shape of B_img :", np.shape(B_img))
+        # print("shape of C_img :", np.shape(C_img))
         
-        B_img = B_img/10.0
+        B_img = B_img
         ##B_img[2,:,:] = B_img[2,:,:]*10
         
-        C_img = C_img/10.0
+        C_img = C_img
         #C_img[2,:,:] = C_img[2,:,:]*10
         D_img = D_img
         r = random.randint(0,1)
@@ -100,7 +100,11 @@ class UnalignedVelABCDElDataset(BaseDataset):
         #B_img = np.expand_dims(B_img,0)
         #C_img = np.expand_dims(C_img,0)
         #D_img = np.expand_dims(D_img,0)
+
+        #convert the numpy data matrices to torch
+        A_img=np.transpose(A_img,(0,2,1))
         A = torch.from_numpy(A_img)
+        # print("torch shape of A=",A.shape)
         #A = torch.abs(A)
         A = A.float()
         B = torch.from_numpy(B_img)
@@ -109,7 +113,7 @@ class UnalignedVelABCDElDataset(BaseDataset):
         
         C = torch.from_numpy(C_img)
         C = C.float()
-        
+        D_img=np.transpose(D_img,(0,2,1))
         D = torch.from_numpy(D_img)
         D = D.float()
         

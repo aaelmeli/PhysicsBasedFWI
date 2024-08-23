@@ -100,6 +100,8 @@ class Vae3Model(BaseModel):
         #self.device3 = torch.device('cuda:{}'.format(self.gpu_ids[2])) if self.gpu_ids else torch.device('cpu')
         # self.device4 =
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
+        self.gamma=[]
+        self.gamma.append(1)
         self.loss_names = ['D_MSE', 'M_MSE', 'V_MSE', 'K_MSE']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         # self.visual_names = ['fake_B','real_B','fake_BT', 'real_BT']
@@ -151,7 +153,8 @@ class Vae3Model(BaseModel):
         #netin1 = self.real_A[:, :, 1:800:2, :]
         if (epoch1 == 1):
             self.latent = torch.ones(1,1,1,1)
-        [self.fake_B,self.grad,self.mu,self.sigma,self.loss_D_MSE] = self.netG(self.real_B,self.real_A,lstart,epoch1,self.latent,self.real_C)  # G(A)
+        [self.fake_B,self.grad,self.mu,self.log_var,self.loss_D_MSE] = self.netG(self.real_B,self.real_A,lstart,epoch1,self.latent,self.real_C)  # G(A)
+        
         #self.latent = self.latent.clone().detach()
         #print("self.latent :", self.latent)
         #self.real_C = self.fake_B
@@ -170,7 +173,7 @@ class Vae3Model(BaseModel):
         #netin1 = self.real_A[:, :, 1:800:2, :]
         #if (epoch1 == 1):
         self.latentT = torch.ones(1,1,1,1)
-        [self.fake_BT,self.gradT,self.muT,self.sigmaT,self.dummy] = self.netG(self.real_B,self.real_A,False_lstart,False_epoch,self.latentT,self.real_C)  # G(A)
+        [self.fake_BT,self.gradT,self.muT,self.log_varT,self.dummy] = self.netG(self.real_B,self.real_A,False_lstart,False_epoch,self.latentT,self.real_C)  # G(A)
         #self.fake_BT = torch.clamp(self.fake_BT,min=15.00,max=35.50)
         self.real_BT = self.real_B
         #self.real_C = self.real_BT
@@ -223,10 +226,15 @@ class Vae3Model(BaseModel):
         #print("shape of real_B :", np.shape(self.real_B))
         #print("shape of fake_B :", np.shape(self.fake_B))
         #print("shape of D_MSE :", np.shape(self.loss_D_MSE))
-        
+
+        # Compute diversity loss term
+        # diversity_loss = -0.5 * torch.sum(self.log_var.exp() / self.log_var.numel() - self.log_var - self.mu.pow(2) / self.log_var.numel())
+        # print ("diversity loss=",diversity_loss)
         self.loss_M_MSE = self.criterionMSE(self.real_B, self.fake_B)/(diff_size[0]*diff_size[1]*diff_size[2]*diff_size[3])
-        # kld_loss = torch.mean(-0.5 * torch.sum(1 + self.log_var - self.mu ** 2 - self.log_var.exp(), dim = 1), dim = 0)
-        kld_loss = -1*torch.sum(1 + torch.log(self.sigma**2)- self.mu ** 2 - self.sigma**2) #compute the KL divergence of the reconstructed distribution and the standard normal distribution
+        kld_loss = torch.sum(-0.5 * torch.sum(1 + self.log_var - self.mu** 2 - self.log_var.exp(), dim = 1), dim = 0)
+        # print("self.loss_M_MSE shape =",self.loss_M_MSE.shape)
+        # kld_loss = torch.mean(-0.5 * torch.sum(1 + self.log_var - self.mu ** 2 - self.log_var.exp(), dim = 1), dim = 0) #Abdo::should I use sum instead of mean?
+        # kld_loss = -1*torch.sum(1 + torch.log(self.sigma**2)- self.mu ** 2 - self.sigma**2) #compute the KL divergence of the reconstructed distribution and the standard normal distribution
         # print("self.mu :", self.mu)
         # print("self.std :", self.sigma)
         # print("sum :", torch.sum(1 + self.log_var - self.mu ** 2 - self.log_var.exp(), dim = 1))
@@ -234,7 +242,11 @@ class Vae3Model(BaseModel):
         # print("self.kld_loss :", kld_loss)
         # print("D_MSE :", self.loss_D_MSE)
         # print("total loss :", self.loss_D_MSE+kld_loss)
-        self.loss_K_MSE = kld_loss
+        # print("epoch 1: ",epoch1)
+        # self.loss_K_MSE = np.sqrt(epoch1)*kld_loss
+        # self.loss_K_MSE = kld_loss*10**5
+        self.loss_K_MSE = kld_loss 
+        self.gamma.append(self.loss_K_MSE.item()/self.loss_D_MSE)
         #print("shape of grad :", np.shape(self.grad))
         #k
         #kld_loss = torch.mean(-0.5 * torch.sum(1 + self.log_var - self.mu ** 2 - self.log_var.exp(), dim = 1), dim = 0)
@@ -289,7 +301,10 @@ class Vae3Model(BaseModel):
         
         # self.loss_G = self.loss_K_MSE 
         ####self.loss_G = lambda2 * self.loss_M1_MSE
-        self.loss_G = self.loss_K_MSE #ABDO added 0.05
+        # print ("gamma =", self.gamma)
+        # print("self.gamma[-2]=",self.gamma[-2])
+        self.loss_G = self.loss_K_MSE*self.gamma[-2] 
+        # self.loss_G = self.loss_K_MSE
         self.loss_G.backward(retain_graph=True)
         
         if (epoch1 <= lstart):
@@ -314,7 +329,9 @@ class Vae3Model(BaseModel):
             #self.fake_B.grad = None
             #self.fake_B.grad = None
             #if (epoch1>lstart and epoch1<=lstart1):
-            self.grad = self.grad*(1)
+            # print("gamma = ",self.gamma[epoch1-1])
+            self.grad = self.grad*(1) 
+            # self.grad = self.grad*(self.gamma[epoch1-1]*10**5) 
             # self.grad = self.grad  #####(10**5) works for marmousi model
             #self.grad = torch.clip(self.grad, min=-0.1, max=0.1) #clipping the gradient my be a good idea when we have high noise
                 
@@ -347,13 +364,13 @@ class Vae3Model(BaseModel):
         #print("shape of fake_B :", np.shape(self.fake_B))
         #print("shape of grad :", np.shape(self.grad))   
         if (epoch1 % 10 == 0): 
-            filen = './vae38ccBigLatent16/GradAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+            filen = './vae50ccLatent5/GradAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             np.save(filen, self.grad.cpu().detach().numpy())  #switch on physics based fwi
         
-            filen = './vae38ccBigLatent16/FakeAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+            filen = './vae50ccLatent5/FakeAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             np.save(filen, self.fake_B.cpu().detach().numpy())  #switch on physics based fwi
             
-            filen = './vae38ccBigLatent16/RealAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+            filen = './vae50ccLatent5/RealAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
             np.save(filen, self.real_B.cpu().detach().numpy())  #switch on physics based fwi
         
         #filen = './marmousi/RealAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
@@ -367,6 +384,8 @@ class Vae3Model(BaseModel):
         self.forward(epoch,lstart)                   # compute fake images: G(A)
         # update G
         self.optimizer_G.zero_grad()        # set G's gradients to zero
+        #Abdo:: idea- try to divide the updatae to two steps, first backpropagate the gradient self.loss_G.backward()
+        #then we compute the step, then we backpropagate the physics, then we compute the step
         self.backward_G11(epoch,batch,lstart)                   # calculate graidents for G
         self.optimizer_G.step()             # udpate G's weights
 

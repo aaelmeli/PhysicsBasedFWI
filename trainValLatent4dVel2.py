@@ -26,6 +26,7 @@ from data import create_dataset2
 from models import create_model
 from util.visualizer import Visualizer
 import numpy as np
+import torch
 #import ray
 
 if __name__ == '__main__':
@@ -137,6 +138,7 @@ if __name__ == '__main__':
              KLloss = KLloss + model.loss_K_MSE.item()
 
 
+
          
          if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
              print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
@@ -158,6 +160,12 @@ if __name__ == '__main__':
             # losses1['Validationloss'] = Validationloss/(k+1)
             #losses1['Model1loss'] = Model1loss/(i+1)
             losses1['KL divergence'] = KLloss/(i+1)
+            # sigmaNorm=np.linalg.norm(model.sigma.cpu().detach().numpy(),2)
+            # muNorm=np.linalg.norm(model.mu.cpu().detach().numpy(),2)
+            sigmaNorm=np.linalg.norm(model.log_var.cpu().detach().numpy(),2)
+            muNorm=np.linalg.norm(model.mu.cpu().detach().numpy(),2)
+            losses1['simga-norm'] = sigmaNorm
+            losses1['mu-norm'] =  muNorm
             #print(losses1)
             #losses2 = model.get_current_losses()
             #print(losses2)

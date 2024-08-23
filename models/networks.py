@@ -11,9 +11,12 @@ import deepwave
 #import torchgeometry as tgm
 from torchvision import models
 from scipy.ndimage import gaussian_filter
+import time
+torch.cuda.empty_cache() 
 
-sys.path.append('./models')
-sys.path.append('/disk/student/adhara/WORK/DeniseFWI/virginFWI/DENISE-Black-Edition/')
+# sys.path.append('./models')
+sys.path.append('/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/DENISE-Black-Edition')
+# sys.path.append('/disk/student/adhara/WORK/DeniseFWI/virginFWI/DENISE-Black-Edition/')
 #from resunet_modules import (
 #    ResidualConv,
 #    ASPP,
@@ -36,7 +39,7 @@ import random
 from .cbam import *
 
 from scipy import fftpack
-from scipy import arange
+from numpy import arange
 from scipy import fft
 from scipy.signal import butter, lfilter
 import scipy
@@ -237,6 +240,14 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
         net = AutoElFullMarmousi23Mar22_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
     elif netG == 'AutoElFullRhoMar22':
         net = AutoElFullRhoMarmousiMar22_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+    elif netG == 'ElasticVAE':
+        net = ElasticVAE_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+    elif netG == 'ElasticVAEDeepWave':
+        net = ElasticVAEDeepWave_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout)      
+    elif netG == 'ElasticToyVAEDeepWave':
+        net = ElasticToyVAEDeepWave_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout)     
+    elif netG == 'ElasticBpVAEDeepWave':
+        net = ElasticBpVAEDeepWave_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout)     
     elif netG == 'AutoElFullRhoScaleMar22':
         net = AutoElFullRhoScaleMarmousiMar22_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
     elif netG == 'AutoElBPRhoScaleMar22':
@@ -275,6 +286,12 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
         net = VaeMarmousi_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout) 
     elif netG == 'Vae3':
         net = VaeMarmousi3_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+    elif netG == 'Vae3Full':
+        net = VaeMarmousi3Full_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+    elif netG == 'VaeSEAML':
+        net = VaeSEAML_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout)    
+    elif netG == 'LinearNNVae3':
+        net = LinearVaeMarmousi_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
     elif netG == 'VaeNoPhy':
         net = VaeNoPhy_Net(input_nc, output_nc, 6, ngf, norm_layer=norm_layer, use_dropout=use_dropout) 
     elif netG == 'VaeLatentNoPhy':
@@ -2290,13 +2307,34 @@ class SpectralConv1d(nn.Module):
 
         
 #######################UNET 2##############################################
-class unetConv2(nn.Module):
+class unetConv2(nn.Module): #Abdo modified
     def __init__(self, in_size, out_size, is_batchnorm):
         super(unetConv2, self).__init__()
         # Kernel size: 3*3, Stride: 1, Padding: 1
         if is_batchnorm:
-            self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, 3, 1, 1),
+            self.conv1 = nn.Sequential(nn.BatchNorm2d(in_size),
+                                       nn.Conv2d(in_size, out_size, 3, 1, 1),
+                                       nn.LeakyReLU(0.1))
+            self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
                                        nn.BatchNorm2d(out_size),
+                                       nn.LeakyReLU(0.1))
+        else:
+            self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, 3, 1, 1),
+                                       nn.LeakyReLU(0.1))
+            self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
+                                       nn.LeakyReLU(0.1))
+    def forward(self, inputs):
+        outputs = self.conv1(inputs)
+        outputs = self.conv2(outputs)
+        return outputs
+
+class unetConv22(nn.Module): #original
+    def __init__(self, in_size, out_size, is_batchnorm):
+        super(unetConv22, self).__init__()
+        # Kernel size: 3*3, Stride: 1, Padding: 1
+        if is_batchnorm:
+            self.conv1 = nn.Sequential(nn.BatchNorm2d(in_size),
+                                       nn.Conv2d(in_size, out_size, 3, 1, 1),
                                        nn.LeakyReLU(0.1))
             self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
                                        nn.BatchNorm2d(out_size),
@@ -2309,24 +2347,57 @@ class unetConv2(nn.Module):
     def forward(self, inputs):
         outputs = self.conv1(inputs)
         outputs = self.conv2(outputs)
+        # outputs = self.conv2(outputs)
         return outputs
 
-
+class unetConv22Toy(nn.Module): #original
+    def __init__(self, in_size, out_size, is_batchnorm):
+        super(unetConv22Toy, self).__init__()
+        # Kernel size: 3*3, Stride: 1, Padding: 1
+        if is_batchnorm:
+            self.conv1 = nn.Sequential(nn.BatchNorm2d(in_size),
+                                       nn.Conv2d(in_size, out_size, 7, 1, 1),
+                                       nn.LeakyReLU(0.1))
+            self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 7, 1, 1),
+                                       nn.BatchNorm2d(out_size),
+                                       nn.LeakyReLU(0.1))
+        else:
+            self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, 7, 1, 1),
+                                        nn.LeakyReLU(0.1))
+            self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 7, 1, 1),
+                                        nn.LeakyReLU(0.1))
+    def forward(self, inputs):
+        outputs = self.conv1(inputs)
+        outputs = self.conv2(outputs)
+        # outputs = self.conv2(outputs)
+        return outputs
 class unetDown(nn.Module):
     def __init__(self, in_size, out_size, is_batchnorm):
         super(unetDown, self).__init__()
-        self.conv = unetConv2(in_size, out_size, is_batchnorm)
+        # self.conv = unetConv2(in_size, out_size, is_batchnorm)#Abdo commented
+        self.conv = unetConv22(in_size, out_size, is_batchnorm)
         self.down = nn.MaxPool2d(2, 2, ceil_mode=True)
         #self.dropout = nn.Dropout2d(0.1)
         
 
     def forward(self, inputs):
         outputs = self.conv(inputs)
-        #outputs = self.bn(outputs)
-        #outputs = self.lr(outputs)
         outputs = self.down(outputs)
         return outputs
 
+class unetDownToy(nn.Module):
+    def __init__(self, in_size, out_size, is_batchnorm):
+        super(unetDownToy, self).__init__()
+        # self.conv = unetConv2(in_size, out_size, is_batchnorm)#Abdo commented
+        self.conv = unetConv22Toy(in_size, out_size, is_batchnorm)
+        self.down = nn.MaxPool2d(2, 2, ceil_mode=True)
+        #self.dropout = nn.Dropout2d(0.1)
+        
+
+    def forward(self, inputs):
+        outputs = self.conv(inputs)
+        outputs = self.down(outputs)
+        return outputs
 
 class unetUp(nn.Module):
     def __init__(self, in_size, out_size, is_deconv):
@@ -2499,7 +2570,7 @@ class autoUp3(nn.Module):
         return outputs3
     
 
-class unetConv5(nn.Module):
+class unetConv5(nn.Module): #Abdo modified for vae marmousi
     def __init__(self, in_size, out_size, is_batchnorm):
         super(unetConv5, self).__init__()
         # Kernel size: 3*3, Stride: 1, Padding: 1
@@ -2507,20 +2578,119 @@ class unetConv5(nn.Module):
             self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, (5,3), (1,1), (2,1)),
                                        nn.BatchNorm2d(out_size),
                                        nn.LeakyReLU(0.1))
-            #self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
+            self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
+                                      nn.BatchNorm2d(out_size),
+                                      nn.LeakyReLU(0.1))
+        else:
+            self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, 3, 1, 1),
+                                       nn.LeakyReLU(0.1))
+            self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
+                                       nn.LeakyReLU(0.1))
+    def forward(self, inputs):
+        outputs = self.conv1(inputs)
+        # outputs = self.conv2(outputs)
+        return outputs
+    
+
+class unetConv555(nn.Module): #Abdo original
+    def __init__(self, in_size, out_size, is_batchnorm):
+        super(unetConv555, self).__init__()
+        # Kernel size: 3*3, Stride: 1, Padding: 1
+        if is_batchnorm:
+            self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, (3,3), 1, 1),
+                                       nn.BatchNorm2d(out_size),
+                                       nn.LeakyReLU(0.1))
+            # self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
+            #                           nn.BatchNorm2d(out_size),
+            #                           nn.LeakyReLU(0.1))
+        else:
+            self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, 5, 1, 1),
+                                       nn.LeakyReLU(0.1))
+            self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 5, 1, 1),
+                                       nn.LeakyReLU(0.1))
+    def forward(self, inputs):
+        outputs = self.conv1(inputs)
+        # outputs = self.conv2(outputs)
+        return outputs
+
+
+class unetConv55(nn.Module): #Abdo original
+    def __init__(self, in_size, out_size, is_batchnorm,rho):
+        super(unetConv55, self).__init__()
+        # Kernel size: 3*3, Stride: 1, Padding: 1
+        if is_batchnorm:
+            if rho:
+                self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, (5,5), (1,1), (2,2)),
+                                        nn.BatchNorm2d(out_size),
+                                        nn.LeakyReLU(0.1))
+                # self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
+                #                           nn.BatchNorm2d(out_size),
+                #                           nn.LeakyReLU(0.1))
+            else:
+                self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, (3,3), (1,1), (1,1)),
+                                        nn.BatchNorm2d(out_size),
+                                        nn.LeakyReLU(0.1))
+                # self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
+                #                           nn.BatchNorm2d(out_size),
+                #                           nn.LeakyReLU(0.1))
+        else:
+            if rho:
+                self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, 5, 1, 2),
+                                        nn.LeakyReLU(0.1))
+                self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 5, 1, 2),
+                                        nn.LeakyReLU(0.1))
+            else:
+                self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, 5, 1, 1),
+                                        nn.LeakyReLU(0.1))
+                self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 5, 1, 1),
+                                        nn.LeakyReLU(0.1))                
+    def forward(self, inputs):
+        outputs = self.conv1(inputs)
+        # outputs = self.conv2(outputs)
+        return outputs
+
+class unetConv55Toy(nn.Module): #Abdo original
+    def __init__(self, in_size, out_size, is_batchnorm):
+        super(unetConv55Toy, self).__init__()
+        # Kernel size: 3*3, Stride: 1, Padding: 1
+        if is_batchnorm:
+            self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, (1,1), (1,1), (1,1)),
+                                       nn.BatchNorm2d(out_size),
+                                       nn.LeakyReLU(0.1))
+            # self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
+            #                           nn.BatchNorm2d(out_size),
+            #                           nn.LeakyReLU(0.1))
+        else:
+            self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, 1, 1, 1),
+                                       nn.BatchNorm2d(out_size),
+                                       nn.LeakyReLU(0.1))
+            self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 1, 1, 1),
+                                        nn.BatchNorm2d(out_size),
+                                       nn.LeakyReLU(0.1))
+    def forward(self, inputs):
+        outputs = self.conv1(inputs)
+        # outputs = self.conv2(outputs)
+        return outputs
+class unetConv55rho(nn.Module): #Abdo original
+    def __init__(self, in_size, out_size, is_batchnorm):
+        super(unetConv55rho, self).__init__()
+        # Kernel size: 3*3, Stride: 1, Padding: 1
+        if is_batchnorm:
+            self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, (3,3), (1,1), (1,1)),
+                                       nn.BatchNorm2d(out_size),
+                                       nn.LeakyReLU(0.1))
+            # self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
             #                           nn.BatchNorm2d(out_size),
             #                           nn.LeakyReLU(0.1))
         else:
             self.conv1 = nn.Sequential(nn.Conv2d(in_size, out_size, 3, 1, 1),
-                                       nn.BatchNorm2d(out_size),
                                        nn.LeakyReLU(0.1))
             self.conv2 = nn.Sequential(nn.Conv2d(out_size, out_size, 3, 1, 1),
-                                       nn.BatchNorm2d(out_size),
                                        nn.LeakyReLU(0.1))
     def forward(self, inputs):
         outputs = self.conv1(inputs)
-        #outputs = self.conv2(outputs)
-        return outputs
+        # outputs = self.conv2(outputs)
+        return outputs     
 
 class unetConv9(nn.Module):
     def __init__(self, in_size, out_size, is_batchnorm):
@@ -2614,10 +2784,13 @@ class unetConv12(nn.Module):
         #outputs = self.conv2(outputs)
         return outputs
     
-class autoUp5(nn.Module):
-    def __init__(self, in_size, out_size, is_deconv, is_batchnorm=True):
-        super(autoUp5, self).__init__()
-        self.conv = unetConv5(in_size, out_size, is_batchnorm)
+
+
+class UpElasticVAE(nn.Module):
+    def __init__(self, in_size, out_size, is_deconv, is_batchnorm):
+        super(UpElasticVAE, self).__init__()
+        # self.conv = unetConv5(in_size, out_size, is_batchnorm) #Abdo commented
+        self.conv = unetConv555(in_size, out_size, is_batchnorm) #Abdo 
         #self.conv2 = unetConv5(out_size, out_size, is_batchnorm)
         # Transposed convolution
         if is_deconv:
@@ -2633,6 +2806,60 @@ class autoUp5(nn.Module):
         #padding=[offset2//2,(offset2+1)//2,offset1//2,(offset1+1)//2]
         # Skip and concatenate 
         #outputs1 = F.pad(inputs1, padding)
+        return outputs3
+class autoUp5(nn.Module):
+    def __init__(self, in_size, out_size, is_deconv, is_batchnorm=True,rho=False):
+        super(autoUp5, self).__init__()
+        self.conv = unetConv5(in_size, out_size, is_batchnorm) #Abdo commented
+        # self.conv = unetConv55(in_size, out_size, is_batchnorm,rho) #Abdo 
+        #self.conv2 = unetConv5(out_size, out_size, is_batchnorm)
+        # Transposed convolution
+        if is_deconv:
+            self.up = nn.ConvTranspose2d(in_size, in_size, kernel_size=2,stride=2)
+        else:
+            self.up = nn.UpsamplingBilinear2d(scale_factor=2)
+
+    def forward(self, inputs2):
+        outputs2 = self.up(inputs2)
+        outputs3 = self.conv(outputs2)
+        #offset1 = (outputs2.size()[2]-inputs1.size()[2])
+        #offset2 = (outputs2.size()[3]-inputs1.size()[3])
+        #padding=[offset2//2,(offset2+1)//2,offset1//2,(offset1+1)//2]
+        # Skip and concatenate 
+        #outputs1 = F.pad(inputs1, padding)
+        return outputs3
+
+
+class autoUp5Toy(nn.Module):
+    def __init__(self, in_size, out_size, is_deconv,is_batchnorm):
+        super(autoUp5Toy, self).__init__()
+        # self.conv = unetConv5(in_size, out_size, is_batchnorm) #Abdo commented
+        self.conv = unetConv55Toy(in_size, out_size, is_batchnorm) #Abdo 
+
+        if is_deconv:
+            self.up = nn.ConvTranspose2d(in_size, in_size, kernel_size=2,stride=2)
+        else:
+            self.up = nn.UpsamplingBilinear2d(scale_factor=2)
+
+    def forward(self, inputs2):
+        outputs2 = self.up(inputs2)
+        outputs3 = self.conv(outputs2)
+
+        return outputs3
+
+class autoUp5rho(nn.Module):
+    def __init__(self, in_size, out_size, is_deconv, is_batchnorm=True):
+        super(autoUp5rho, self).__init__()
+        # self.conv = unetConv5(in_size, out_size, is_batchnorm) #Abdo commented
+        self.conv = unetConv55rho(in_size, out_size, is_batchnorm) #Abdo 
+        if is_deconv:
+            self.up = nn.ConvTranspose2d(in_size, in_size, kernel_size=2,stride=2)
+        else:
+            self.up = nn.UpsamplingBilinear2d(scale_factor=2)
+
+    def forward(self, inputs2):
+        outputs2 = self.up(inputs2)
+        outputs3 = self.conv(outputs2)
         return outputs3
 
 class autoUp9(nn.Module):
@@ -4273,21 +4500,590 @@ class UnetMarmousiPre_Net(nn.Module):
                  
         return net1out1.grad, lossinner.item()
 
+class VaeSEAML_Net(nn.Module):
+    def __init__(self,outer_nc, inner_nc, input_nc=None,
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+        super(VaeSEAML_Net, self).__init__()
+        self.is_deconv     = False
+        self.in_channels   = outer_nc
+        self.is_batchnorm  = False #Abdo, try to use batch-normalization
+        self.n_classes     = inner_nc
+        
+        filters = [32, 64, 128, 256]
+        # filters = [2, 4, 8, 16, 32]
+        
+        latent_dim = 16
+
+        self.down1   = unetDown(int(self.in_channels), filters[0], self.is_batchnorm)
+        self.down2   = unetDown(filters[0], filters[1], self.is_batchnorm)
+        self.down3   = unetDown(filters[1], filters[2], self.is_batchnorm)
+        self.down4   = unetDown(filters[2], filters[3], self.is_batchnorm)
+
+        self.smu = (nn.Linear(filters[3]*1008, latent_dim))
+        self.svar = (nn.Linear(filters[3]*1008, latent_dim))
+
+        self.decoder_input = nn.Linear(latent_dim, filters[3]*32*16) # for marmousi full size (348 x 1000)
+
+        self.up3     = autoUp5(filters[3], filters[2], self.is_deconv)
+        self.up2     = autoUp5(filters[2], filters[1], self.is_deconv)
+        self.up1     = autoUp5(filters[1], filters[0], self.is_deconv)
+        self.f1      =  nn.Conv2d(filters[0],self.n_classes, 1)
+        self.final   =  nn.Sigmoid()
+        
+    def forward(self, inputs1, inputs2, lstart, epoch1, latentI, lowf):
+        filters = [32, 64, 128, 256]
+       
+        label_dsp_dim = (100,250)
+        mintrue = torch.min(inputs1)
+        maxtrue = torch.max(inputs1)
+        #inputs2 = inputs2/100
+        meandata = torch.mean(inputs2)
+        stdata = torch.std(inputs2)
+        mindata = torch.min(inputs2)
+        maxdata = torch.max(inputs2)
+        print("meandata",meandata)
+        print("stdata",stdata)
+        print("mindata",mindata)
+        print("maxdata",maxdata)
+        # down1  = self.down1(inputs2[:,:,1:4001:4,:]/(10**3)) 
+        down1  = self.down1(inputs2[:,:,1:4001:4,:])#why dividing the signal by 10**3 in the previouse
+        print("down1=",down1*100000)
+        down2  = self.down2(down1)
+        down3  = self.down3(down2)
+        down4  = self.down4(down3)
+        print("down4=",down4*100000)
+
+        result = torch.flatten(down4, start_dim=1)
+
+        mu = self.smu(result)
+        log_var = self.svar(result)
+
+        p = self.reparameterize(mu, log_var)
+        z = self.decoder_input(p)
+        z = z.view(-1, filters[3], 16, 32)
+    
+        up1    = self.up3(z)
+        up1    = self.up2(up1)
+        up1    = self.up1(up1)
+        up1    = up1[:,:,0:label_dsp_dim[0],0:label_dsp_dim[1]].contiguous()
+        f1     = self.f1(up1)
+        f1     = self.final(f1)
+        
+        f1    = mintrue + f1*(maxtrue-mintrue)
+        f1[(inputs1==1510)] = 1510
+        
+        grad = 0*f1
+        lossT = 0.0
+        if (epoch1 > lstart):
+            [grad, lossT] = self.prop(inputs2, f1, lstart, epoch1, mintrue, maxtrue, inputs1)
+            grad = grad.to(inputs2.get_device())
+            grad = torch.unsqueeze(grad,0)
+            grad = torch.unsqueeze(grad,0)
+
+        return f1, grad, mu, log_var, lossT
+    
+    def reparameterize(self, mu, logvar):
+        """
+        Reparameterization trick to sample from N(mu, var) from
+        N(0,1).
+        :param mu: (Tensor) Mean of the latent Gaussian [B x D]
+        :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
+        :return: (Tensor) [B x D]
+        """
+        std = torch.exp(0.5 * logvar) #we do it this way to make sure that the standard deviation is always positive.
+        eps = torch.randn_like(std) #draw random variable between -1 and 1 (mu=0,and sigma=1)
+        print("std=",std)
+        print("mean=",mu)        
+        return eps * std  + mu
+    
+    
+    # Initialization of Parameters
+    def  _initialize_weights(self):
+          for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m,nn.ConvTranspose2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+                    
+    # forward modeling to compute gradients
+    def prop(self, inputs, vel, lstart, epoch1, mintrue, maxtrue, true):
+        torch.cuda.empty_cache()
+        torch.cuda.set_device(2)  #RB Necessary if device <> 0
+        GPU_string='cuda:'+str(2)
+        devicek = torch.device(GPU_string)
+
+        net1out1 = vel
+        net1out1 = net1out1.detach()
+        net1out1 = torch.squeeze(net1out1)
+        g1 = torch.arange(net1out1.size(dim=0))
+        g1 = g1**2
+        #Abdo:: what is ss, why we are scaling the gradient with this (which is a sort of the velocity model)
+        ss = g1.tile((200,1))
+        ss = torch.transpose(ss,0,1)
+
+        net1out1 = net1out1.to(devicek)
+
+        freq = 15
+        dx = 10
+        nt = 4001
+        dt = 0.001
+        num_shots = 20
+        num_receivers_per_shot = 250
+        num_sources_per_shot = 1
+        num_dims = 2
+
+        source_spacing = 10
+        receiver_spacing = 1
+
+        source_depth  = 0 # 4 x dx
+        first_source = 30 # 40 x dx
+        x_s = torch.zeros(num_shots, num_sources_per_shot, num_dims)
+        x_s[:,:, 0] = source_depth #the z coordinate
+        x_s[:, 0, 1] = (torch.arange(num_shots) * source_spacing + first_source)
+
+        receiver_depth = 0 
+        first_receiver = 0 
+        x_r = torch.zeros(num_shots, num_receivers_per_shot, num_dims)
+        x_r[..., 0] = receiver_depth
+        x_r[:, :, 1] = (
+            (torch.arange(num_receivers_per_shot) * receiver_spacing +
+            first_receiver)
+            .repeat(num_shots, 1)
+        )
+
+        source_amplitudes_true = (deepwave.wavelets.ricker(freq, nt, dt, 1/freq)
+                                #   .reshape(-1, 1, 1)
+                                  )
+
+        source_amplitudes_true = source_amplitudes_true.to(devicek)
+        num_batches = 2 # try not to use batches for deterministic inversion and see what would happen?!
+        num_epochs = 1
+        if (epoch1 > lstart):
+            num_epochs = 1
+
+        num_shots_per_batch = int(num_shots / num_batches)
+        sumlossinner = 0.0
+        ss = ss.to(devicek)
+
+
+        receiver_amplitudes_true = inputs[0,:,:,:]
+        receiver_amplitudes_true = receiver_amplitudes_true.to(devicek)
+
+        mat2 = torch.ones(net1out1.size()[0],net1out1.size()[1]).to(devicek)
+        mat2 = mat2 * 1510
+
+        # print (" I am Here")
+        src_amps = source_amplitudes_true.repeat(
+                        num_shots, 1, 1)
+        receiver_amplitudes_cte = deepwave.scalar(mat2.to(devicek), dx, dt,
+        source_amplitudes=src_amps.to(devicek),
+        source_locations=x_s.to(devicek),
+        receiver_locations=x_r.to(devicek))[-1].to(devicek)
+        receiver_amplitudes_cte=torch.transpose(receiver_amplitudes_cte,1,2)
+        receiver_amplitudes_true = receiver_amplitudes_true
+
+        rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=1, keepdim=True)
+        rcv_amps_true_norm = receiver_amplitudes_true / (rcv_amps_true_max.abs() + 1e-10)
+
+        
+        criterion1 = torch.nn.L1Loss()
+
+        
+
+        if (epoch1 > lstart):
+            net1out1.requires_grad = True
+            optimizer2 = torch.optim.Adam([{'params': [net1out1], 'lr':10}])
+
+        for epoch in range(num_epochs):
+                #Shuffle shot coordinates
+                idx = torch.randperm(num_shots)
+                #idx = idx.type(torch.LongTensor)
+                x_s = x_s.view(-1,2)[idx].view(x_s.size())
+                #RB Shuffle true's seismograms sources with same random values
+                rcv_amps_true_norm = rcv_amps_true_norm[idx,:,:]
+                #RB Shuffle direct wave seismograms sources with the same random values
+                receiver_amplitudes_cte = receiver_amplitudes_cte[idx,:,:]
+        
+                for it in range(num_batches):
+                    #if (epoch1 > lstart):
+                    optimizer2.zero_grad()
+                    model2 = net1out1.clone()
+                    model2 = torch.clamp(net1out1,min=mintrue.to(devicek),max=maxtrue.to(devicek))
+
+                    batch_src_amps = source_amplitudes_true.repeat(num_shots_per_batch, 1, 1)
+
+                    batch_rcv_amps_true = rcv_amps_true_norm[it::num_batches].to(devicek)
+                    batch_rcv_amps_cte = receiver_amplitudes_cte[it::num_batches].to(devicek)
+                    batch_x_s = x_s[it::num_batches,:,:].to(devicek)
+
+                    batch_x_r = x_r[it::num_batches,:,:].to(devicek)
+
+                    batch_rcv_amps_pred = deepwave.scalar(model2.to(devicek), dx, dt,
+                    source_amplitudes=batch_src_amps.to(devicek),
+                    source_locations=batch_x_s.to(devicek),
+                    receiver_locations=batch_x_r.to(devicek))[-1].to(devicek)
+
+                    batch_rcv_amps_pred=torch.transpose(batch_rcv_amps_pred,1,2)
+                    batch_rcv_amps_cte_max, _ = torch.abs(batch_rcv_amps_cte).max(dim=1, keepdim=True)
+                    batch_rcv_amps_cte_norm = batch_rcv_amps_cte / (batch_rcv_amps_cte_max.abs() + 1e-10)
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True) 
+                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10) 
+                    
+                    batch_rcv_amps_pred = batch_rcv_amps_pred - batch_rcv_amps_cte
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True)
+                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10)
+
+                    lossinner1 = criterion1(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
+                    
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_predTrans' + str(num_batches)+'ep'+str(epoch1)+'.npy'      
+                    # np.save(filen, batch_rcv_amps_pred.cpu().detach().numpy()) 
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_cte' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                    # np.save(filen, batch_rcv_amps_cte.cpu().detach().numpy())
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_true' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                    # np.save(filen, batch_rcv_amps_true.cpu().detach().numpy())
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_pred_norm' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                    # np.save(filen, batch_rcv_amps_pred_norm.cpu().detach().numpy())
+
+
+
+                    #CC functional
+                    nrsrc=num_shots_per_batch
+                    nrcv=batch_rcv_amps_pred.shape[2]
+                    lossinner1=0
+                    for isrc in range(nrsrc):
+                        for ircv in range(nrcv):
+                            lossinner1=lossinner1+1-(torch.dot(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek), batch_rcv_amps_true[isrc,:,ircv].to(devicek)))/(torch.norm(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek))*torch.norm(batch_rcv_amps_true[isrc,:,ircv].to(devicek)))                    
+
+                    #L2 functional
+                    #lossinner2 = criterion2(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
+    
+                   
+                    lossinner = lossinner1
+
+                    lossinner.backward()
+
+                    net1out1.grad = net1out1.grad #Abdo:: try not multiplying with this ss and see what will happen
+
+                    # filen = './vaeFull51ccLatent5/GradAD' + str(num_batches)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                    # np.save(filen, net1out1.grad.cpu().detach().numpy())  #switch on physics based fwi
+                
+                    # filen = './vaeFull51ccLatent5/FakeAD' + str(num_batches)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                    # np.save(filen, self.model2.cpu().detach().numpy())  #switch on physics based fwi
+                    
+                    # filen = './vaeFull51ccLatent5/RealAD' + str(num_batches)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                    # np.save(filen, self.real_B.cpu().detach().numpy())  #switch on physics based fwi
+
+                    net1out1.grad[(true[0,0,:,:]==1510)] = 0
+
+                 
+        return net1out1.grad, lossinner.item()
+    
+
+class VaeMarmousi3Full_Net(nn.Module):
+    def __init__(self,outer_nc, inner_nc, input_nc=None,
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+        super(VaeMarmousi3Full_Net, self).__init__()
+        self.is_deconv     = False
+        self.in_channels   = outer_nc
+        self.is_batchnorm  = False #Abdo, try to use batch-normalization
+        self.n_classes     = inner_nc
+        
+        filters = [32, 64, 128, 256]
+        # filters = [2, 4, 8, 16, 32]
+        
+        latent_dim = 16
+
+        self.down1   = unetDown(int(self.in_channels), filters[0], self.is_batchnorm)
+        self.down2   = unetDown(filters[0], filters[1], self.is_batchnorm)
+        self.down3   = unetDown(filters[1], filters[2], self.is_batchnorm)
+        self.down4   = unetDown(filters[2], filters[3], self.is_batchnorm)
+
+        self.smu = (nn.Linear(filters[3]*945, latent_dim))
+        self.svar = (nn.Linear(filters[3]*945, latent_dim))
+
+        self.decoder_input = nn.Linear(latent_dim, filters[3]*250*87) # for marmousi full size (348 x 1000)
+
+        self.up3     = autoUp5(filters[3], filters[2], self.is_deconv)
+        self.up2     = autoUp5(filters[2], filters[1], self.is_deconv)
+        # self.up1     = autoUp5(filters[1], filters[0], self.is_deconv)
+        self.f1      =  nn.Conv2d(filters[1],self.n_classes, 1)
+        self.final   =  nn.Sigmoid()
+        
+    def forward(self, inputs1, inputs2, lstart, epoch1, latentI, lowf):
+        filters = [32, 64, 128, 256]
+   
+        label_dsp_dim = (150,500)
+        mintrue = torch.min(inputs1)
+        maxtrue = torch.max(inputs1)
+        #inputs2 = inputs2/100
+        meandata = torch.mean(inputs2)
+        stdata = torch.std(inputs2)
+        mindata = torch.min(inputs2)
+        maxdata = torch.max(inputs2)
+        # down1  = self.down1(inputs2[:,:,1:4001:4,:]/(10**3)) 
+        down1  = self.down1(inputs2[:,:,1:4001:4,:])#why dividing the signal by 10**3 in the previouse
+        down2  = self.down2(down1)
+        down3  = self.down3(down2)
+        down4  = self.down4(down3)
+
+        result = torch.flatten(down4, start_dim=1)
+
+        mu = self.smu(result)
+        log_var = self.svar(result)
+
+        p = self.reparameterize(mu, log_var)
+        z = self.decoder_input(p)
+        z = z.view(-1, filters[3], 87, 250)
+    
+        up1    = self.up3(z)
+        up1    = self.up2(up1)
+        # up1    = self.up1(up1)
+        up1    = up1[:,:,0:label_dsp_dim[0],0:label_dsp_dim[1]].contiguous()
+        f1     = self.f1(up1)
+        f1     = self.final(f1)
+        
+        f1    = mintrue + f1*(maxtrue-mintrue)
+        f1[(inputs1==1500)] = 1500
+        
+        grad = 0*f1
+        lossT = 0.0
+        if (epoch1 > lstart):
+            [grad, lossT] = self.prop(inputs2, f1, lstart, epoch1, mintrue, maxtrue, inputs1)
+            grad = grad.to(inputs2.get_device())
+            grad = torch.unsqueeze(grad,0)
+            grad = torch.unsqueeze(grad,0)
+
+        return f1, grad, mu, log_var, lossT
+    
+    def reparameterize(self, mu, logvar):
+        """
+        Reparameterization trick to sample from N(mu, var) from
+        N(0,1).
+        :param mu: (Tensor) Mean of the latent Gaussian [B x D]
+        :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
+        :return: (Tensor) [B x D]
+        """
+        std = torch.exp(0.5 * logvar) #we do it this way to make sure that the standard deviation is always positive.
+        eps = torch.randn_like(std) #draw random variable between -1 and 1 (mu=0,and sigma=1)
+        return eps * std  + mu
+    
+    
+    # Initialization of Parameters
+    def  _initialize_weights(self):
+          for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m,nn.ConvTranspose2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+                    
+    # forward modeling to compute gradients
+    def prop(self, inputs, vel, lstart, epoch1, mintrue, maxtrue, true):
+        torch.cuda.empty_cache()
+        torch.cuda.set_device(2)  #RB Necessary if device <> 0
+        GPU_string='cuda:'+str(2)
+        devicek = torch.device(GPU_string)
+
+        net1out1 = vel
+        net1out1 = net1out1.detach()
+        net1out1 = torch.squeeze(net1out1)
+        g1 = torch.arange(net1out1.size(dim=0))
+        g1 = g1**2
+        #Abdo:: what is ss, why we are scaling the gradient with this (which is a sort of the velocity model)
+        ss = g1.tile((200,1))
+        ss = torch.transpose(ss,0,1)
+
+        net1out1 = net1out1.to(devicek)
+
+        freq = 8
+        dx = 10
+        nt = 4001
+        dt = 0.001
+        num_shots = 24
+        num_receivers_per_shot = 240
+        num_sources_per_shot = 1
+        num_dims = 2
+
+        ny = 1000
+        source_spacing = 20
+        receiver_spacing = 2
+
+        source_depth  = 0 # 4 x dx
+        first_source = 20 # 40 x dx
+        x_s = torch.zeros(num_shots, num_sources_per_shot, num_dims)
+        x_s[:,:, 0] = source_depth #the z coordinate
+        x_s[:, 0, 1] = (torch.arange(num_shots) * source_spacing + first_source)
+
+        receiver_depth = 0 # 5 x dx 
+        first_receiver = 20 # 5 x dx
+        x_r = torch.zeros(num_shots, num_receivers_per_shot, num_dims)
+        x_r[..., 0] = receiver_depth
+        x_r[:, :, 1] = (
+            (torch.arange(num_receivers_per_shot) * receiver_spacing +
+            first_receiver)
+            .repeat(num_shots, 1)
+        )
+
+        source_amplitudes_true = (deepwave.wavelets.ricker(freq, nt, dt, 1/freq)
+                                #   .reshape(-1, 1, 1)
+                                  )
+
+        source_amplitudes_true = source_amplitudes_true.to(devicek)
+        num_batches = 2 # try not to use batches for deterministic inversion and see what would happen?!
+        num_epochs = 1
+        if (epoch1 > lstart):
+            num_epochs = 1
+
+        num_shots_per_batch = int(num_shots / num_batches)
+        sumlossinner = 0.0
+        ss = ss.to(devicek)
+
+
+        receiver_amplitudes_true = inputs[0,:,:,:]
+        receiver_amplitudes_true = receiver_amplitudes_true.to(devicek)
+
+        mat2 = torch.ones(net1out1.size()[0],net1out1.size()[1]).to(devicek)
+        mat2 = mat2 * 1500
+
+        # print (" I am Here")
+        src_amps = source_amplitudes_true.repeat(
+                        num_shots, 1, 1)
+        receiver_amplitudes_cte = deepwave.scalar(mat2.to(devicek), dx, dt,
+        source_amplitudes=src_amps.to(devicek),
+        source_locations=x_s.to(devicek),
+        receiver_locations=x_r.to(devicek))[-1].to(devicek)
+        receiver_amplitudes_cte=torch.transpose(receiver_amplitudes_cte,1,2)
+        receiver_amplitudes_true = receiver_amplitudes_true
+
+        rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=1, keepdim=True)
+        rcv_amps_true_norm = receiver_amplitudes_true / (rcv_amps_true_max.abs() + 1e-10)
+
+        
+        criterion1 = torch.nn.L1Loss()
+
+        
+
+        if (epoch1 > lstart):
+            net1out1.requires_grad = True
+            optimizer2 = torch.optim.Adam([{'params': [net1out1], 'lr':10}])
+
+        for epoch in range(num_epochs):
+                #Shuffle shot coordinates
+                idx = torch.randperm(num_shots)
+                #idx = idx.type(torch.LongTensor)
+                x_s = x_s.view(-1,2)[idx].view(x_s.size())
+                #RB Shuffle true's seismograms sources with same random values
+                rcv_amps_true_norm = rcv_amps_true_norm[idx,:,:]
+                #RB Shuffle direct wave seismograms sources with the same random values
+                receiver_amplitudes_cte = receiver_amplitudes_cte[idx,:,:]
+        
+                for it in range(num_batches):
+                    #if (epoch1 > lstart):
+                    optimizer2.zero_grad()
+                    model2 = net1out1.clone()
+                    model2 = torch.clamp(net1out1,min=mintrue.to(devicek),max=maxtrue.to(devicek))
+
+                    batch_src_amps = source_amplitudes_true.repeat(num_shots_per_batch, 1, 1)
+
+                    batch_rcv_amps_true = rcv_amps_true_norm[it::num_batches].to(devicek)
+                    batch_rcv_amps_cte = receiver_amplitudes_cte[it::num_batches].to(devicek)
+                    batch_x_s = x_s[it::num_batches,:,:].to(devicek)
+
+                    batch_x_r = x_r[it::num_batches,:,:].to(devicek)
+
+                    batch_rcv_amps_pred = deepwave.scalar(model2.to(devicek), dx, dt,
+                    source_amplitudes=batch_src_amps.to(devicek),
+                    source_locations=batch_x_s.to(devicek),
+                    receiver_locations=batch_x_r.to(devicek))[-1].to(devicek)
+
+                    batch_rcv_amps_pred=torch.transpose(batch_rcv_amps_pred,1,2)
+                    batch_rcv_amps_cte_max, _ = torch.abs(batch_rcv_amps_cte).max(dim=1, keepdim=True)
+                    batch_rcv_amps_cte_norm = batch_rcv_amps_cte / (batch_rcv_amps_cte_max.abs() + 1e-10)
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True) 
+                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10) 
+                    
+                    batch_rcv_amps_pred = batch_rcv_amps_pred - batch_rcv_amps_cte
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True)
+                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10)
+
+                    lossinner1 = criterion1(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
+                    
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_predTrans' + str(num_batches)+'ep'+str(epoch1)+'.npy'      
+                    # np.save(filen, batch_rcv_amps_pred.cpu().detach().numpy()) 
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_cte' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                    # np.save(filen, batch_rcv_amps_cte.cpu().detach().numpy())
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_true' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                    # np.save(filen, batch_rcv_amps_true.cpu().detach().numpy())
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_pred_norm' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                    # np.save(filen, batch_rcv_amps_pred_norm.cpu().detach().numpy())
+
+
+
+                    #CC functional
+                    nrsrc=num_shots_per_batch
+                    nrcv=batch_rcv_amps_pred.shape[2]
+                    lossinner1=0
+                    for isrc in range(nrsrc):
+                        for ircv in range(nrcv):
+                            lossinner1=lossinner1+1-(torch.dot(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek), batch_rcv_amps_true[isrc,:,ircv].to(devicek)))/(torch.norm(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek))*torch.norm(batch_rcv_amps_true[isrc,:,ircv].to(devicek)))                    
+
+                    #L2 functional
+                    #lossinner2 = criterion2(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
+    
+                   
+                    lossinner = lossinner1
+
+                    lossinner.backward()
+
+                    net1out1.grad = net1out1.grad #Abdo:: try not multiplying with this ss and see what will happen
+
+                    # filen = './vaeFull51ccLatent5/GradAD' + str(num_batches)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                    # np.save(filen, net1out1.grad.cpu().detach().numpy())  #switch on physics based fwi
+                
+                    # filen = './vaeFull51ccLatent5/FakeAD' + str(num_batches)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                    # np.save(filen, self.model2.cpu().detach().numpy())  #switch on physics based fwi
+                    
+                    # filen = './vaeFull51ccLatent5/RealAD' + str(num_batches)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                    # np.save(filen, self.real_B.cpu().detach().numpy())  #switch on physics based fwi
+
+                    net1out1.grad[(true[0,0,:,:]==1500)] = 0
+
+                 
+        return net1out1.grad, lossinner.item()
+    
+
 class VaeMarmousi3_Net(nn.Module):
     def __init__(self,outer_nc, inner_nc, input_nc=None,
                  submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
         super(VaeMarmousi3_Net, self).__init__()
         self.is_deconv     = False
         self.in_channels   = outer_nc
-        self.is_batchnorm  = False
+        self.is_batchnorm  = False #Abdo, try to use batch-normalization
         self.n_classes     = inner_nc
         
         filters = [16, 32, 64, 128, 512]
         #filters = [2, 4, 8, 16, 32]
         
-        latent_dim = 16
+        latent_dim = 5
 
-        self.down1   = unetDown(int(self.in_channels), filters[0], self.is_batchnorm)
+        self.down1   = unetDown(int(self.in_channels), filters[0], True)
         self.down2   = unetDown(filters[0], filters[1], self.is_batchnorm)
         self.down3   = unetDown(filters[1], filters[2], self.is_batchnorm)
         self.down4   = unetDown(filters[2], filters[3], self.is_batchnorm)
@@ -4296,9 +5092,8 @@ class VaeMarmousi3_Net(nn.Module):
         #self.decoder_input1 = nn.Linear(filters[2]*125*26, latent_dim) #for marmousi 151x200
         #self.decoder_input = nn.Linear(latent_dim, filters[2]*500*102) #for marmousi 151x200
         ########self.decoder_input1 = nn.Linear(filters[3]*63*13, latent_dim) #for marmousi 101x101 ######earlier
-        #self.com = nn.Tanh()
-        self.smu = nn.Linear(filters[3]*63*13, latent_dim)
-        self.svar = nn.Linear(filters[3]*63*13, latent_dim)
+        self.smu = (nn.Linear(filters[3]*63*13, latent_dim))
+        self.svar = (nn.Linear(filters[3]*63*13, latent_dim))
         #self.tanhl = nn.Tanh()
         #self.decoder_input = nn.Linear(latent_dim, filters[3]*100*26) #for marmousi 101x101
         #self.decoder_input1 = nn.Linear(filters[1]*100*18, latent_dim) #for marmousi 101x101
@@ -4314,6 +5109,8 @@ class VaeMarmousi3_Net(nn.Module):
         self.f1      =  nn.Conv2d(filters[0],self.n_classes, 1)
         #self.f2      =  nn.Conv2d(1,1,1)
         self.final   =  nn.Sigmoid()
+
+  
         #self.final1  =  nn.Conv2d(1, 1, 1)
         
     def forward(self, inputs1, inputs2, lstart, epoch1, latentI, lowf):
@@ -4332,20 +5129,37 @@ class VaeMarmousi3_Net(nn.Module):
         down2  = self.down2(down1)
         down3  = self.down3(down2)
         down4  = self.down4(down3)
-        
+        # print ("data =", inputs2)
         # print("shape of inputs2 :", np.shape(inputs2))
-        
-        #print("shape of down2 :", np.shape(down2))
+        # print("shape of inputs1 :", np.shape(inputs1))
+        # print("shape of down4 :", np.shape(down4))
         result = torch.flatten(down4, start_dim=1)
-        
-        #print("result shape :", np.shape(result))
+ 
+        # print("result shape :", np.shape(result))
         #result = self.com(result)
         #p = self.decoder_input1(result)
         mu = self.smu(result)
-        # log_var = self.svar(result)
-        sigma = self.svar(result)
-        # p = self.reparameterize(mu, log_var)
-        p = self.reparameterize(mu, sigma)
+        # mu=torch.unsqueeze(mu,0)
+        # mu=torch.unsqueeze(mu,0)
+        # print("mu shape :", np.shape(mu))
+        # mu = self.BN(mu) #use batch normalization on mu
+        log_var = self.svar(result)
+        # log_var=torch.unsqueeze(log_var,0)
+        # log_var=torch.unsqueeze(log_var,0)
+        # print("log_var shape :", np.shape(log_var))
+        # log_var =self.DropOut(log_var)
+        # log_var=torch.squeeze(log_var,0)
+        # log_var=torch.squeeze(log_var,0)
+        # mu=torch.squeeze(mu,0)
+        # mu=torch.squeeze(mu,0)
+        # print("mu dimension =", mu.shape)
+        # print("sigma dimension =", log_var.shape)
+        # sigma = self.svar(result)
+        p = self.reparameterize(mu, log_var)
+
+        # print("mu =", logmu)
+        # print("sigma =", log_var)
+        # p = self.reparameterize(mu, sigma)
         #p = self.tanhl(p)
         #down3  = self.down3(down2)
         #down4  = self.down4(down3)s
@@ -4371,11 +5185,13 @@ class VaeMarmousi3_Net(nn.Module):
         z = z.view(-1, filters[3], 19, 25)
     
         up1    = self.up3(z)
-        #print(" shape of up1 :", np.shape(up1))
         up1    = self.up2(up1)
+        #print(" shape of up1 :", np.shape(up1))
         up1    = self.up1(up1)
-        #print("shape of up1 :", np.shape(up1))
-        up1    = up1[:,:,1:1+label_dsp_dim[0],0:1+label_dsp_dim[1]].contiguous()
+        print ("shape of up1 =", up1.shape)
+        # up1    = self.up1(up1)
+        # print("shape of up1 :", np.shape(up1))
+        up1    = up1[:,:,1:1+label_dsp_dim[0],0:label_dsp_dim[1]].contiguous()
         f1     = self.f1(up1)
         f1     = self.final(f1)
         #f1     = self.final1(f1)
@@ -4413,9 +5229,9 @@ class VaeMarmousi3_Net(nn.Module):
         # print(" forward solve == done")
         # print(" shape of grad :", np.shape(grad))
 
-        return f1, grad, mu, sigma, lossT
+        return f1, grad, mu, log_var, lossT
     
-    def reparameterize(self, mu, sigma):
+    def reparameterize(self, mu, logvar):
         """
         Reparameterization trick to sample from N(mu, var) from
         N(0,1).
@@ -4423,12 +5239,16 @@ class VaeMarmousi3_Net(nn.Module):
         :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
         :return: (Tensor) [B x D]
         """
-        # std = torch.exp(0.5 * logvar)
-        std=sigma
+        std = torch.exp(0.5 * logvar) #we do it this way to make sure that the standard deviation is always positive.
+        # std=sigma
         # print ("std=", std)
         # print ("mu=", mu)
-        eps = torch.randn_like(std)
+        eps = torch.randn_like(std) #draw random variable between -1 and 1 (mu=0,and sigma=1)
         # print("eps=", eps)
+        # print ("mu= ",mu)
+        # print ("sigma= ",std)
+        # print ("eps= ",eps)
+        # print ("latent= ",eps * std  + mu)
         return eps * std  + mu
     
     
@@ -4452,8 +5272,8 @@ class VaeMarmousi3_Net(nn.Module):
     # forward modeling to compute gradients
     def prop(self, inputs, vel, lstart, epoch1, mintrue, maxtrue, true):
         torch.cuda.empty_cache()
-        torch.cuda.set_device(5)  #RB Necessary if device <> 0
-        GPU_string='cuda:'+str(5)
+        torch.cuda.set_device(2)  #RB Necessary if device <> 0
+        GPU_string='cuda:'+str(2)
         devicek = torch.device(GPU_string)
         #torch.cuda.set_device(7)  #RB Necessary if device <> 0
         #GPU_string='cuda:'+str(7)
@@ -4504,7 +5324,7 @@ class VaeMarmousi3_Net(nn.Module):
         #print("device ordinal :", self.devicek)
         source_amplitudes_true = source_amplitudes_true.to(devicek)
         #lstart = -1
-        num_batches = 2
+        num_batches = 2 # try not to use batches for deterministic inversion and see what would happen?!
         num_epochs = 1
         if (epoch1 > lstart):
             num_epochs = 1
@@ -4674,6 +5494,241 @@ class VaeMarmousi3_Net(nn.Module):
         return net1out1.grad, lossinner.item()
     
     
+class LinearVaeMarmousi_Net(nn.Module):
+    def __init__(self, input_dim, outer_dim=None,submodule=None, output_dim=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+        super(LinearVaeMarmousi_Net, self).__init__()
+        self.input_dim   = 200*2000
+        self.output_dim = 151*200
+        self.is_batchnorm  = False #Abdo, try to use batch-normalization
+        filters = [256,128,64,32,16,8,8]
+
+        latent_dim=5
+        
+        self.img2hid0= nn.Linear(self.input_dim ,filters[0])
+        self.hid2hid1= nn.Linear(filters[0],filters[1])
+        self.hid2hid2= nn.Linear(filters[1],filters[2])
+        self.hid2hid3= nn.Linear(filters[2],filters[3])
+        self.hid2hid4= nn.Linear(filters[3],filters[4])
+        self.hid2hid5= nn.Linear(filters[4],filters[5])
+        self.hid2hid6= nn.Linear(filters[5],filters[6])
+
+        self.hid2mu=   nn.Linear(filters[6]*18,latent_dim)
+        self.hid2var=  nn.Linear(filters[6]*18,latent_dim)
+
+        self.relu=nn.ELU()
+
+        self.Z2hid6= nn.Linear(latent_dim,filters[6])
+        self.bhid2hid5= nn.Linear(filters[6],filters[5])
+        self.bhid2hid4= nn.Linear(filters[5],filters[4])
+        self.bhid2hid3= nn.Linear(filters[4],filters[3])
+        self.bhid2hid2= nn.Linear(filters[3],filters[2])
+        self.bhid2hid1= nn.Linear(filters[2],filters[1])
+        self.bhid2hid0= nn.Linear(filters[1],filters[0])
+        self.bhid2img= nn.Linear(filters[0],self.output_dim)
+
+        self.final=nn.Sigmoid()
+
+    def encoder(self, data):
+        #prepare the data - do not include all of them because of GPU RAM
+        data_reduced=data[:,:,1:4001:2,:]
+        #flatten the data over receivers, consider that the batch size is equal to the number of sources.
+        flattenInput = torch.flatten(data_reduced,2)
+        h0=self.relu(self.img2hid0(flattenInput))
+        h1=self.relu(self.hid2hid1(h0))
+        h2=self.relu(self.hid2hid2(h1))
+        h3=self.relu(self.hid2hid3(h2))
+        h4=self.relu(self.hid2hid4(h3))
+        h5=self.relu(self.hid2hid5(h4))
+        h6=self.relu(self.hid2hid6(h5))
+        #at this point, we have filtered in the most important features from all 18 sources and compressed the data
+        #split the network to two pieces, one for the mean, and another for the log(var)
+        #TO-DO::check whether to apply relu on the layer before you compute the var and mu!!
+        #now, flatten the output from last step over number of sources (combining all the important features from all sources in one array)
+        flattenh6 = torch.flatten(h6)
+        var=(self.hid2mu(flattenh6))
+        mu=(self.hid2var(flattenh6))
+        return mu,var
+
+    def decoder(self, latent):
+        out_dim=(151,200)
+        h6=self.relu(self.Z2hid6(latent))
+        h5=self.relu(self.bhid2hid5(h6))
+        h4=self.relu(self.bhid2hid4(h5))
+        h3=self.relu(self.bhid2hid3(h4))
+        h2=self.relu(self.bhid2hid2(h3))
+        h1=self.relu(self.bhid2hid1(h2))
+        h0=self.relu(self.bhid2hid0(h1))
+        # imgFlattened = torch.flatten(h0)
+        # print("self.output_dim=",self.output_dim)
+        # print("imgFlattened shape=",imgFlattened.shape)
+        imag0=self.bhid2img(h0)
+        img = self.final(imag0)
+        img = img.view(1,1,out_dim[0],out_dim[1])
+        return img
+
+        # CHECK THIS::Initialization of Parameters
+    def  _initialize_weights(self):
+          print("I am here initializing the weights!!!")
+          for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m,nn.ConvTranspose2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_() 
+
+    def reparameterization(self, mu, logvar):
+        #we consider the log(var) instead of considering sigma or the variance itself
+        ##to enforce the positivness of the variance.
+        std=torch.exp(0.5 * logvar)
+        eps=torch.randn_like(std)
+        z=mu+eps*std
+        return z
+    
+    def calc_obj_grad(self, inputs, vel, lstart, epoch1, mintrue, maxtrue, true):
+        #this function return the physics-based loss anf gradient
+        #we use the deepwave solver to do forward and backward solves, return
+        #misfit and gradients
+        torch.cuda.empty_cache()
+        torch.cuda.set_device(1)  #RB Necessary if device <> 0
+        GPU_string='cuda:'+str(1)
+        devicek = torch.device(GPU_string) 
+        net1out1 = vel
+        net1out1 = net1out1.detach()
+        net1out1 = torch.squeeze(net1out1)
+        g1 = torch.arange(net1out1.size(dim=0))
+        g1 = g1**2
+        ss = g1.tile((200,1))
+        ss = torch.transpose(ss,0,1)
+        net1out1 = net1out1.to(devicek)
+        freq = 8
+        dx = 10
+        nt = 4001
+        dt = 0.001
+        num_shots = 18
+        num_receivers_per_shot = 200
+        num_sources_per_shot = 1
+        num_dims = 2
+        ny = 200
+        
+        source_spacing = 200 * dx / num_shots
+        receiver_spacing = 200 * dx / num_receivers_per_shot
+        x_s = torch.zeros(num_shots, num_sources_per_shot, num_dims)
+        x_s[:, 0, 1] = torch.linspace(0,(ny-1)*dx,num_shots)
+        x_r = torch.zeros(num_shots, num_receivers_per_shot, num_dims)
+        x_r[0, :, 1] = torch.arange(
+            num_receivers_per_shot).float() * receiver_spacing
+        x_r[:, :, 1] = x_r[0, :, 1].repeat(num_shots, 1)
+        source_amplitudes_true = (deepwave.wavelets.ricker(freq, nt, dt, 1/freq)
+                                #   .reshape(-1, 1, 1)
+                                  )
+        source_amplitudes_true = source_amplitudes_true.to(devicek)
+        num_batches = 2 # try not to use batches for deterministic inversion and see what would happen?!
+        num_epochs = 1
+        if (epoch1 > lstart):
+            num_epochs = 1
+        num_shots_per_batch = int(num_shots / num_batches)
+        sumlossinner = 0.0
+        ss = ss.to(devicek)   
+        receiver_amplitudes_true = inputs[0,:,:,:]
+        receiver_amplitudes_true = receiver_amplitudes_true.to(devicek)
+        mat2 = torch.ones(net1out1.size()[0],net1out1.size()[1]).to(devicek)
+        mat2 = mat2 * 1500
+
+        src_amps = source_amplitudes_true.repeat(
+                        num_shots, 1, 1)
+        receiver_amplitudes_cte = deepwave.scalar(mat2.to(devicek), dx, dt,
+        source_amplitudes=src_amps.to(devicek),
+        source_locations=x_s.to(devicek)/dx,
+        receiver_locations=x_r.to(devicek)/dx)[-1].to(devicek)
+        receiver_amplitudes_cte=torch.transpose(receiver_amplitudes_cte,1,2)
+        receiver_amplitudes_true = receiver_amplitudes_true
+        rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=1, keepdim=True)
+        rcv_amps_true_norm = receiver_amplitudes_true / (rcv_amps_true_max.abs() + 1e-10)
+        criterion1 = torch.nn.L1Loss()
+        if (epoch1 > lstart):
+            net1out1.requires_grad = True
+            optimizer2 = torch.optim.Adam([{'params': [net1out1], 'lr':10}])
+        for epoch in range(num_epochs):
+                #Shuffle shot coordinates
+                idx = torch.randperm(num_shots)
+                x_s = x_s.view(-1,2)[idx].view(x_s.size())
+                rcv_amps_true_norm = rcv_amps_true_norm[idx,:,:]
+                receiver_amplitudes_cte = receiver_amplitudes_cte[idx,:,:]
+        
+                for it in range(num_batches):
+                    optimizer2.zero_grad()
+                    model2 = net1out1.clone()
+                    model2 = torch.clamp(net1out1,min=mintrue.to(devicek),max=maxtrue.to(devicek))
+                    batch_src_amps = source_amplitudes_true.repeat(num_shots_per_batch, 1, 1)
+                    batch_rcv_amps_true = rcv_amps_true_norm[it::num_batches].to(devicek)
+                    batch_rcv_amps_cte = receiver_amplitudes_cte[it::num_batches].to(devicek)
+                    batch_x_s = x_s[it::num_batches,:,:].to(devicek)
+                    batch_x_r = x_r[it::num_batches,:,:].to(devicek)
+
+                    batch_rcv_amps_pred = deepwave.scalar(model2.to(devicek), dx, dt,
+                    source_amplitudes=batch_src_amps.to(devicek),
+                    source_locations=batch_x_s.to(devicek)/dx,
+                    receiver_locations=batch_x_r.to(devicek)/dx)[-1].to(devicek)
+                    batch_rcv_amps_pred=torch.transpose(batch_rcv_amps_pred,1,2)
+                    batch_rcv_amps_cte_max, _ = torch.abs(batch_rcv_amps_cte).max(dim=1, keepdim=True)
+                    batch_rcv_amps_cte_norm = batch_rcv_amps_cte / (batch_rcv_amps_cte_max.abs() + 1e-10)
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True) 
+                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10) 
+                    
+                    batch_rcv_amps_pred = batch_rcv_amps_pred - batch_rcv_amps_cte
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True)
+                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10)
+
+                    lossinner1 = criterion1(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
+                    #CC functional
+                    nrsrc=num_shots_per_batch
+                    nrcv=batch_rcv_amps_pred.shape[2]
+                    lossinner1=0
+                    for isrc in range(nrsrc):
+                        for ircv in range(nrcv):
+                            lossinner1=lossinner1+1-(torch.dot(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek), batch_rcv_amps_true[isrc,:,ircv].to(devicek)))/(torch.norm(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek))*torch.norm(batch_rcv_amps_true[isrc,:,ircv].to(devicek)))                    
+                   
+                    lossinner = lossinner1
+                    lossinner.backward()
+                    net1out1.grad = net1out1.grad #Abdo:: try not multiplying with this ss and see what will happen
+                    net1out1.grad[(true[0,0,:,:]==1500)] = 0
+
+                 
+        return net1out1.grad, lossinner.item()            
+
+    def forward (self, models, seismo, lstart, epoch, latentI, lowf):
+        #do forwad feeding, return loss and gradient
+        mintrue = torch.min(models)
+        maxtrue = torch.max(models)
+        mu,log_var=self.encoder(seismo)
+        z=self.reparameterization(mu,log_var)
+        img=self.decoder(z)
+        img = mintrue + img*(maxtrue-mintrue)
+        img[(models==1500)] = 1500
+        grad = 0*img
+        loss = 0.0
+        if (epoch > lstart):
+            [grad,loss]=self.calc_obj_grad(seismo,img,lstart, epoch, mintrue, maxtrue, models)
+            grad = grad.to(seismo.get_device())
+            grad = torch.unsqueeze(grad,0)
+            grad = torch.unsqueeze(grad,0)
+
+        return img, grad, mu, log_var, loss
+
+            
+# class lineardown(nn.module):
+#     def __init__(self, in_size,out_size,is_batchnorm):
+#         super(lineardown,self).__init__()
+#         self.linear1=linear1(in_size,out_size,is_batchnorm)
+#         self.linear1=linear1(in_size,out_size,is_batchnorm)
 class VaeMarmousi_Net(nn.Module):
     def __init__(self,outer_nc, inner_nc, input_nc=None,
                  submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
@@ -4687,7 +5742,7 @@ class VaeMarmousi_Net(nn.Module):
         filters = [8, 16, 32, 64, 128]
         #filters = [2, 4, 8, 16, 32]
         
-        latent_dim = 8
+        latent_dim = 64
 
         self.down1   = unetDown(self.in_channels, filters[0], self.is_batchnorm)
         self.down2   = unetDown(filters[0], filters[1], self.is_batchnorm)
@@ -4702,7 +5757,7 @@ class VaeMarmousi_Net(nn.Module):
         self.svar = nn.Linear(filters[3]*63*13, latent_dim) #the standard deviation
         #self.decoder_input = nn.Linear(latent_dim, filters[3]*100*26) #for marmousi 101x101
         #self.decoder_input1 = nn.Linear(filters[1]*100*18, latent_dim) #for marmousi 101x101
-        self.decoder_input = nn.Linear(latent_dim, filters[3]*25*13) #for marmousi 101x101
+        self.decoder_input = nn.Linear(latent_dim, filters[3]*25*19) #for marmousi 101x101
         
         
         #self.up4     = autoUp(filters[4], filters[3], self.is_deconv)
@@ -4719,8 +5774,8 @@ class VaeMarmousi_Net(nn.Module):
     def forward(self, inputs1, inputs2, lstart, epoch1, latentI, lowf):
         #filters = [16, 32, 64, 128, 512]
         filters = [8, 16, 32, 64, 128]
-        latent_dim = 8
-        label_dsp_dim = (100,200)
+        
+        label_dsp_dim = (151,200)
         mintrue = torch.min(inputs1)
         maxtrue = torch.max(inputs1)
         down1  = self.down1(inputs2[:,:,1:4001:4,:])
@@ -4761,14 +5816,16 @@ class VaeMarmousi_Net(nn.Module):
         #z = 0.5*torch.ones([1,1,1,64])
         z = self.decoder_input(p)
         #z = z.view(-1, filters[3], 250, 51) #for marmousi model
-        z = z.view(-1, filters[3], 13, 25)
+        z = z.view(-1, filters[3], 19, 25)
     
         up1    = self.up3(z)
         #print(" shape of up1 :", np.shape(up1))
         up1    = self.up2(up1)
         up1    = self.up1(up1)
+        # print("shape of up1=",up1.shape)
         #print("shape of up1 :", np.shape(up1))
         up1    = up1[:,:,1:1+label_dsp_dim[0],0:1+label_dsp_dim[1]].contiguous()
+        # print("shape of up12=",up1.shape)
         f1     = self.f1(up1)
         f1     = self.final(f1)
         #f1     = self.final1(f1)
@@ -4777,7 +5834,8 @@ class VaeMarmousi_Net(nn.Module):
         #print("shape of f1 :", np.shape(f1))
         
         f1    = mintrue + f1*(maxtrue-mintrue)
-        f1[(inputs1==1510.0)] = 1510
+        # print("shape of f1=",f1.shape)
+        f1[(inputs1==1500)] = 1500
         #f1     = lowf + f1
         #f1[(inputs1 == 1.510)] = 1.510
         #f1     = torch.clamp(f1,min=mintrue,max=maxtrue)
@@ -4839,12 +5897,12 @@ class VaeMarmousi_Net(nn.Module):
     # forward modeling to compute gradients
     def prop(self, inputs, vel, lstart, epoch1, mintrue, maxtrue, true):
         
-        #torch.cuda.set_device(7)  #RB Necessary if device <> 0
-        #GPU_string='cuda:'+str(7)
-        #devicek = torch.device(GPU_string)
+        torch.cuda.set_device(7)  #RB Necessary if device <> 0
+        GPU_string='cuda:'+str(7)
+        devicek = torch.device(GPU_string)
         #vel = vel.to(devicek)
         #net1out1 = mintrue + vel*(maxtrue-mintrue)
-        net1out1 = vel*1000
+        net1out1 = vel
         #net1out1 = net1out2.to(devicek)
         #net1out1 = (3550-1500)*vel+1500
         #print("---shape of vel---", str(np.shape(vel)))
@@ -4855,12 +5913,12 @@ class VaeMarmousi_Net(nn.Module):
         g1 = g1**2
         ss = g1.tile((200,1))
         ss = torch.transpose(ss,0,1)
-
-        devicek = net1out1.get_device()
+        net1out1 = net1out1.to(devicek)
+        # devicek = net1out1.get_device()
         #net1out1[0:26,:] = 1500.0
 
         
-        freq = 14
+        freq = 8
         dx = 10
         nt = 4001
         dt = 0.001
@@ -4879,35 +5937,27 @@ class VaeMarmousi_Net(nn.Module):
             num_receivers_per_shot).float() * receiver_spacing
         x_r[:, :, 1] = x_r[0, :, 1].repeat(num_shots, 1)
         
-        x = deepwave.wavelets.ricker(15, nt, dt, 1/15).cpu().numpy()
-        n = len(x)
-        k = arange(n)
-        Fs = 1/dt
-        T = n/Fs
-        frq = k/T
-        frq = frq[range(int(n/2))]
-        #Y = fft(x)/n
-        #Y = Y[range(int(n/2))]
-        #power_spectrum = np.square(abs_ft)
-        #frequency = np.linspace(0, 1/2*dt, len(power_spectrum))
-        #plt.plot(frq[0:200],abs(Y[0:200]),'r')
+        # x = deepwave.wavelets.ricker(15, nt, dt, 1/15).cpu().numpy()
+        # n = len(x)
+        # k = arange(n)
+        # Fs = 1/dt
+        # T = n/Fs
+        # frq = k/T
+        # frq = frq[range(int(n/2))]
+        source_amplitudes_true = (deepwave.wavelets.ricker(freq, nt, dt, 1/freq)
+                                #   .reshape(-1, 1, 1)
+                                  )
 
-        xlf = x
-        nyq = 0.5*Fs
-        normalCutoff = 2 / nyq
-        b, a = butter(5, normalCutoff, btype='high')
-        lowt = lfilter(b,a,x)
-        #Ylow = fft(lowt)/n
-        #Ylow = Ylow[range(int(n/2))]
-        #plt.plot(frq[0:200],abs(Ylow[0:200]))
-        lowt = torch.Tensor(lowt)
-        
 
-        #source_amplitudes_true = (deepwave.wavelets.ricker(freq, nt, dt, 1/freq)
-        #                          .reshape(-1, 1, 1))
-        source_amplitudes_true = (lowt
-                                  .reshape(-1, 1, 1))
-        #print("device ordinal :", self.devicek)
+        # xlf = x
+        # nyq = 0.5*Fs
+        # normalCutoff = 2 / nyq
+        # b, a = butter(5, normalCutoff, btype='high')
+        # lowt = lfilter(b,a,x)
+        # lowt = torch.Tensor(lowt)
+        # source_amplitudes_true = (lowt
+        #                           .reshape(-1, 1, 1))
+
         source_amplitudes_true = source_amplitudes_true.to(devicek)
         #lstart = -1
         num_batches = 2
@@ -4928,7 +5978,7 @@ class VaeMarmousi_Net(nn.Module):
         #net1out1 = net1out1.to(self.devicek)
 
         receiver_amplitudes_true = inputs[0,:,:,:]
-        receiver_amplitudes_true = receiver_amplitudes_true.swapaxes(0,1)
+        # receiver_amplitudes_true = receiver_amplitudes_true.swapaxes(0,1)
         receiver_amplitudes_true = receiver_amplitudes_true.to(devicek)
         #print("shape of receiver amplitudes true")
         #print(np.shape(receiver_amplitudes_true))
@@ -4945,7 +5995,7 @@ class VaeMarmousi_Net(nn.Module):
         #print(min1.get_device())
         #min1 = min1.to(self.device1)
         mat2 = torch.ones(net1out1.size()[0],net1out1.size()[1]).to(devicek)
-        mat2 = mat2 * 1510
+        mat2 = mat2 * 1500
         #mat2 = torch.clamp(mat2,min=1500,max=3550)
         #min1 = torch.min(net1out1)
         #max1 = torch.max(net1out1)
@@ -4955,18 +6005,18 @@ class VaeMarmousi_Net(nn.Module):
         #net1out1 = net1out1.to(self.devicek)
         #mat2 = mat2.to(self.devicek)
         src_amps = source_amplitudes_true.repeat(
-                        1, num_shots, 1)
-        prop2 = deepwave.scalar.Propagator({'vp': mat2}, dx)
-        receiver_amplitudes_cte = prop2(src_amps,
-                                x_s.to(devicek),
-                                x_r.to(devicek), dt)
-        
-        receiver_amplitudes_true = receiver_amplitudes_true - receiver_amplitudes_cte
+                        num_shots, 1, 1)
+        receiver_amplitudes_cte = deepwave.scalar(mat2.to(devicek), dx, dt,
+        source_amplitudes=src_amps.to(devicek),
+        source_locations=x_s.to(devicek)/dx,
+        receiver_locations=x_r.to(devicek)/dx)[-1].to(devicek)
+        receiver_amplitudes_cte=torch.transpose(receiver_amplitudes_cte,1,2)
+        receiver_amplitudes_true = receiver_amplitudes_true #do not subtract the cte velocities, i have already done this when generated seisomgrams
         
         #print("receiver_amplitudes_true :", np.shape(receiver_amplitudes_true))
         #print("receiver_amplitudes_cte :", np.shape(receiver_amplitudes_cte))
         #receiver_amplitudes_true = receiver_amplitudes_true
-        rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=0, keepdim=True)
+        rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=1, keepdim=True)
         rcv_amps_true_norm = receiver_amplitudes_true / (rcv_amps_true_max.abs() + 1e-10)
         #rcv_amps_true_norm = receiver_amplitudes_true
         ss = ss.to(devicek)
@@ -4986,45 +6036,51 @@ class VaeMarmousi_Net(nn.Module):
                 #idx = idx.type(torch.LongTensor)
                 x_s = x_s.view(-1,2)[idx].view(x_s.size())
                 #RB Shuffle true's seismograms sources with same random values
-                rcv_amps_true_norm = rcv_amps_true_norm[:,idx,:]
+                rcv_amps_true_norm = rcv_amps_true_norm[idx,:,:]
                 #RB Shuffle direct wave seismograms sources with the same random values
-                receiver_amplitudes_cte = receiver_amplitudes_cte[:,idx,:]
+                receiver_amplitudes_cte = receiver_amplitudes_cte[idx,:,:]
         
                 for it in range(num_batches):
                     #if (epoch1 > lstart):
                     optimizer2.zero_grad()
                     model2 = net1out1.clone()
-                    model2 = torch.clamp(net1out1,min=mintrue*1000,max=maxtrue*1000)
+                    model2 = torch.clamp(net1out1,min=mintrue.to(devicek),max=maxtrue.to(devicek))
                     #np.save('before108.npy',net1out1.cpu().detach().numpy())
                     #net1out1 = torch.clamp(net1out1,min=2000,max=4500)
-                    prop = deepwave.scalar.Propagator({'vp': model2}, dx)
-                    batch_src_amps = source_amplitudes_true.repeat(1, num_shots_per_batch, 1)
+                    
+                    batch_src_amps = source_amplitudes_true.repeat(num_shots_per_batch, 1, 1)
                     #print("shape of batch src amps")
                     #print(np.shape(batch_src_amps))
                     ############batch_rcv_amps_true = rcv_amps_true_norm[:,it::num_batches].to(self.devicek)
-                    batch_rcv_amps_true = rcv_amps_true_norm[:,it::num_batches]
-                    batch_rcv_amps_cte = receiver_amplitudes_cte[:,it::num_batches]
-                    batch_x_s = x_s[it::num_batches].to(devicek)
+                    batch_rcv_amps_true = rcv_amps_true_norm[it::num_batches].to(devicek)
+                    batch_rcv_amps_cte = receiver_amplitudes_cte[it::num_batches].to(devicek)
+                    batch_x_s = x_s[it::num_batches,:,:].to(devicek)
                     ##################batch_x_s = x_s[it::num_batches]
                     #print("shape of batch src amps")
                     # print(np.shape(batch_x_s))
                     #####################batch_x_r = x_r[it::num_batches]
-                    batch_x_r = x_r[it::num_batches].to(devicek)
+                    batch_x_r = x_r[it::num_batches,:,:].to(devicek)
                     #print("shape of batch receiver amps")
                     # print(np.shape(batch_x_r))
-                    batch_rcv_amps_pred = prop(batch_src_amps, batch_x_s, batch_x_r, dt)
+                    batch_rcv_amps_pred = deepwave.scalar(model2.to(devicek), dx, dt,
+                    source_amplitudes=batch_src_amps.to(devicek),
+                    source_locations=batch_x_s.to(devicek)/dx,
+                    receiver_locations=batch_x_r.to(devicek)/dx)[-1].to(devicek)
                     #print("batch_rcv_amps_pred")
                     #print(np.shape(batch_rcv_amps_pred))
-                    batch_rcv_amps_pred = batch_rcv_amps_pred - batch_rcv_amps_cte
-                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=0, keepdim=True)
-                    # Normalize amplitudes by dividing by the maximum amplitude of each receiver
-                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10)
-                    #batch_rcv_amps_pred_norm = batch_rcv_amps_pred 
-                    ##############batch_rcv_amps_pred_norm = batch_rcv_amps_pred
+                    batch_rcv_amps_pred=torch.transpose(batch_rcv_amps_pred,1,2)
+                    batch_rcv_amps_cte_max, _ = torch.abs(batch_rcv_amps_cte).max(dim=1, keepdim=True)
+                    batch_rcv_amps_cte_norm = batch_rcv_amps_cte / (batch_rcv_amps_cte_max.abs() + 1e-10)
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True) 
+                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10) 
                     
-                    #print("shape of receiver amplitudes predicted")
-                    # print(np.shape(batch_rcv_amps_pred))
+                    batch_rcv_amps_pred = batch_rcv_amps_pred - batch_rcv_amps_cte
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True)
+                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10)
+
                     lossinner1 = criterion1(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
+
+              
                     
                     #y_true1 = vgg(torch.unsqueeze(torch.swapaxes(batch_rcv_amps_true[:,0:3,:],0,1),0))
                     #y_pred1 = vgg(torch.unsqueeze(torch.swapaxes(batch_rcv_amps_pred_norm[:,0:3,:],0,1),0))
@@ -5049,7 +6105,7 @@ class VaeMarmousi_Net(nn.Module):
                     #p1 = p1*0.00005*(torch.max(net1out1.grad)-torch.min(net1out1.grad))
                     #net1out1.grad = p1 + net1out1.grad
                     net1out1.grad = net1out1.grad*ss
-                    net1out1.grad[(true[0,0,:,:]==1510)] = 0
+                    net1out1.grad[(true[0,0,:,:]==1500)] = 0
                     #net1out1.grad[0:26,:] = 0
                     ##########optimizer2.step()
                     #epoch_loss += loss.item()
@@ -9929,7 +10985,7 @@ class AutoElFullMarmousi23Mar22_Net(nn.Module):
         vs0 = vs[-1,-1]*np.ones(np.shape(vs))
         rho0 = rho[-1,-1]*np.ones(np.shape(rho))
         
-        vp = vp*10.0
+        vp = vp*10.0 #Abdo:: Arnab scales this by 10, see whether this is working or not
         vs = vs*10.0
         rho = rho*10.0
 
@@ -10177,7 +11233,7 @@ class AutoElFullMarmousi23Mar22_Net(nn.Module):
         grads, fnames = d.get_fwi_gradients(['seis'],return_filenames=True)
         print("fnames :", fnames)
         vp_grad = np.array(grads[0])
-        vs_grad = vp_grad*0
+        vs_grad = vp_grad*0 #does this mean the gradient w.r.t the vs and rho is zero (fixing both parameters?)
         rho_grad = vp_grad*0
         #vs_grad = np.array(grads[2])
         #rho_grad = np.array(grads[0])
@@ -10241,7 +11297,1570 @@ class AutoElFullMarmousi23Mar22_Net(nn.Module):
         #rho_grad = 0
         return vp_grad, vs_grad, rho_grad, loss
 
+class ElasticVAEDeepWave_Net(nn.Module):
+    def __init__(self,outer_nc, inner_nc, input_nc=None,
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+        super(ElasticVAEDeepWave_Net, self).__init__()
+        self.is_deconv     = False
+        self.in_channels   = outer_nc
+        self.is_batchnorm  = False
+        self.n_classes     = 1
+        filters = [32, 64, 128, 256]
+        # filters = [16,32,64,128]
+        latent_dim = 16
+        #combine the two component of the wavefield
+        self.combine1 = nn.Conv2d(self.in_channels, 1, 3, 1, 1)
+        self.combine2 = nn.Conv2d(self.in_channels, 1, 3, 1, 1)
+        #start the encoder
+        self.down1   = unetDown(2, filters[0], self.is_batchnorm)
+        self.down2   = unetDown(filters[0], filters[1], self.is_batchnorm)
+        self.down3   = unetDown(filters[1], filters[2], self.is_batchnorm)
+        self.down4   = unetDown(filters[2], filters[3], self.is_batchnorm)
+        #variance and mean for vs-vp
+        self.smu_vsp = (nn.Linear(filters[3]*945, latent_dim))
+        # self.svar_vsp = (nn.Linear(filters[3]*945, latent_dim))
+        #variance and mean for rho
+        self.smu_rho = (nn.Linear(filters[3]*945, latent_dim))
+        # self.svar_rho = (nn.Linear(filters[3]*945, latent_dim))
+        #now start preparing the latent vectors for decoding
+        self.decoder_vsp = nn.Linear(latent_dim, filters[3]*63*23) #for marmousi 101x101
+        # self.decoder_rho = nn.Linear(latent_dim, filters[3]*63*23)
 
+        # start the decoder 
+        #in the decoder, we will have different decoder network for each model (distinict 1 for vp, vs, and rho)
+        #vp decoder
+        self.up31     = autoUp5(int(filters[3]), int(filters[2]), self.is_deconv)
+        self.up21     = autoUp5(int(filters[2]), int(filters[1]), self.is_deconv)
+        self.up11     = autoUp5(int(filters[1]), int(filters[0]), self.is_deconv)
+        #vs decoder
+        self.up32     = autoUp5(int(filters[3]), int(filters[2]), self.is_deconv)
+        self.up22     = autoUp5(int(filters[2]), int(filters[1]), self.is_deconv)
+        self.up12     = autoUp5(int(filters[1]), int(filters[0]), self.is_deconv)
+        # #rho decoder
+        self.rho=True
+        self.up33     = autoUp5(int(filters[3]), int(filters[2]/4), self.is_deconv,self.rho)
+        self.up23     = autoUp5(int(filters[2]/4), int(filters[1]/4), self.is_deconv,self.rho)
+        self.up13     = autoUp5(int(filters[1]/4), int(filters[0]/4), self.is_deconv,self.rho)
+        #transform the outputs to models
+        self.f11      =  nn.Conv2d(filters[0],int(filters[0]), 1)
+        self.f12      =  nn.Conv2d(int(filters[0]),int(filters[0]), 1)
+        self.f13      =  nn.Conv2d(int(filters[0]/4),int(filters[0]/4), 1)
+
+        #transform the outputs to models     
+        self.vp     =   nn.Conv2d(int(filters[0]),1,1)
+        self.vs     =   nn.Conv2d(int(filters[0]),1,1)
+        self.rho     =   nn.Conv2d(int(filters[0]/4),1,1)
+        
+    def forward(self, inputs1, inputs2, lstart, epoch1, latentI, lowf, inputs3, freq, idx, it):
+        filters = [32, 64, 128, 256]
+        # filters = [16,32,64,128]
+        # filters = [8,16,32, 64]
+        label_dsp_dim = (150,500)
+        lowf=lowf
+
+        minvp = torch.min(inputs1[:,0,:,:])
+        maxvp = torch.max(inputs1[:,0,:,:])
+        
+        minvs = torch.min(inputs1[:,1,:,:])
+        maxvs = torch.max(inputs1[:,1,:,:])
+        
+        minrho = torch.min(inputs1[:,2,:,:])
+        maxrho = torch.max(inputs1[:,2,:,:])
+
+
+        combine1 = self.combine1((inputs2[:,:,1:4000:4,:]))
+        combine2 = self.combine2((inputs3[:,:,1:4000:4,:]))
+        # print("shape of combine2",combine2.shape)
+
+        c1c2 = torch.cat((combine1,combine2),axis=1)
+        # print("shape of clc2",c1c2.shape)
+
+        down1  = self.down1(c1c2)
+        down2  = self.down2(down1)
+        down3  = self.down3(down2)
+        down4  = self.down4(down3)
+        # print("down4",down4)
+        result = torch.flatten(down4, start_dim=1)
+
+        # print("result shape =",result.shape)
+        #compute mu,logvar for vs-vp
+        mu_vsp = self.smu_vsp(result)
+        # log_var_vsp = self.svar_vsp(result)
+
+        # zvsp = self.reparameterize(mu_vsp, log_var_vsp)
+
+        
+        #compute mu,logvar for rho
+        mu_rho = self.smu_rho(result)
+        # log_var_rho = self.svar_rho(result)
+        # zrho = self.reparameterize(mu_rho, log_var_rho)
+   
+        
+        z_vsp = self.decoder_vsp(mu_vsp)
+        z_rho = self.decoder_vsp(mu_rho)
+        z_vsp = z_vsp.view(-1, filters[3], 23, 63)
+        z_rho = z_rho.view(-1,filters[3],23,63)
+
+        # print("z_vsp",z_vsp)
+        # print("z_rho",z_rho)
+    
+        up31    = self.up31(z_vsp)
+        up32    = self.up32(z_vsp)
+
+        up33    = self.up33(z_rho) #Abdo, this is only used for rho?
+
+        up21    = self.up21(up31)
+        up22    = self.up22(up32)
+        up23    = self.up23(up33)
+
+        up11    = self.up11(up21)
+        up12    = self.up12(up22)
+        up13    = self.up13(up23)
+
+        # print ("up11",up11)
+        # print ("up12",up12)
+        # print ("up13",up13)
+        # print("shape of up11", up11.shape)
+        up11    = up11[:,:,1:1+label_dsp_dim[0],1:1+label_dsp_dim[1]].contiguous()
+        up12    = up12[:,:,1:1+label_dsp_dim[0],1:1+label_dsp_dim[1]].contiguous()
+        up13    = up13[:,:,1:1+label_dsp_dim[0],1:1+label_dsp_dim[1]].contiguous()
+        
+        f11     = self.f11(up11)
+        f12     = self.f12(up12)
+        f13     = self.f13(up13)
+
+
+
+        vp1f     = self.vp(f11)
+        vs1f     = self.vs(f12)
+        rho1f    = self.rho(f13)
+
+
+        vp1    = torch.unsqueeze(lowf[:,0,:,:],1) + vp1f
+        vs1    = torch.unsqueeze(lowf[:,1,:,:],1) + vs1f
+        rho1   = torch.unsqueeze(lowf[:,2,:,:],1) + rho1f
+        truevp,truevs,truerho=torch.unsqueeze(inputs1[:,0,:,:],1),torch.unsqueeze(inputs1[:,1,:,:],1),torch.unsqueeze(inputs1[:,2,:,:],1)
+
+        # fp1=self.final(f11)
+        # fs1=self.final(f12)
+        # vp1=minvp+fp1*(maxvp-minvp)
+        # vs1=minvs+fs1*(maxvs-minvs)
+        # vp1 = truevp
+        # vs1 = truevs
+        # rho1=truerho
+
+
+        vp1    = torch.clip(vp1, min=minvp, max=maxvp)
+        vs1    = torch.clip(vs1, min=minvs, max=maxvs)
+        rho1   = torch.clip(rho1, min=minrho, max=maxrho)
+
+
+        vp1[(truevp==minvp)] = minvp
+        vs1[(truevs==minvs)] = minvs
+        rho1 [(truerho==minrho)] = minrho
+
+
+        latent1 = 0
+        grad = 0*vp1
+        lossT = 0.0
+        vp_grad = vp1*0
+        vs_grad = vp1*0
+        rho_grad = vp1*0
+        
+        print(epoch1,lstart)
+        if (epoch1 > lstart):
+            [vp_grad, vs_grad, rho_grad, lossT] = self.prop(vp1, vs1, rho1, inputs1, epoch1, freq, idx, it, inputs2,inputs3)
+
+
+        return vp1, vs1, rho1, grad, latent1, vp_grad, vs_grad, rho_grad, lossT,mu_vsp
+    
+    def reparameterize(self, mu, logvar):
+        """
+        Reparameterization trick to sample from N(mu, var) from
+        N(0,1).
+        :param mu: (Tensor) Mean of the latent Gaussian [B x D]
+        :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
+        :return: (Tensor) [B x D]
+        """
+        std = torch.exp(0.5 * logvar) #we do it this way to make sure that the standard deviation is always positive.
+        eps = torch.randn_like(std) #draw random variable between -1 and 1 (mu=0,and sigma=1)
+        return eps * std  + mu
+    # Initialization of Parameters
+    def  _initialize_weights(self):
+          for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m,nn.ConvTranspose2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+    
+    # forward modeling to compute gradients
+    #note that we do not pass the data here, instead we pass the data in su fomat to denise to compute the misfit and the gradient
+    def prop(self, vp1, vs1, rho1, true, epoch1, freq, idx, it, seismox, seismoy):
+        torch.cuda.empty_cache()
+        torch.cuda.set_device(1)  
+        GPU_string='cuda:'+str(1)
+        device = torch.device(GPU_string)
+        #get the current models
+        vp=  vp1[0,0,:,:].detach().to(device)
+        vs= vs1[0,0,:,:].detach().to(device)
+        rho=rho1[0,0,:,:].detach().to(device)
+        #get the true models - not sure if we need this
+        vp_true = true[0,0,:,:]
+        vs_true = true[0,1,:,:]
+        rho_true = true[0,2,:,:]
+
+        minvp=torch.min(vp_true)
+        minvs=torch.min(vs_true)
+        minrho=torch.min(rho_true)
+
+        #set forward modeling inputs
+        ny = 150
+        nx = 500
+        dx = 10.0
+
+        #source and receivers
+        n_shots = 24
+        n_sources_per_shot = 1
+        source_depth = 2
+        first_source = 20
+        d_source=20
+        n_receivers_per_shot = 240
+        d_receiver = 2
+        first_receiver = 11
+        receiver_depth = 23
+        #batches
+        num_batches = 12 #just for now, we may need to try other options
+        num_shots_per_batch = int(n_shots / num_batches) #ceil the number to nearst integer.
+
+        #source wavelet
+        freq = 8
+        nt = 4000
+        dt = 0.001
+        time_delay = 1 / freq
+
+        # source_locations
+        source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
+                                    dtype=torch.long, device=device)
+        source_locations[..., 0] = source_depth
+        source_locations[:, 0, 1] = (torch.arange(n_shots) * d_source +
+                                     first_source)
+
+        # receiver_locations
+        receiver_locations = torch.zeros(n_shots, n_receivers_per_shot, 2,
+                                        dtype=torch.long, device=device)
+        receiver_locations[..., 0] = receiver_depth
+        receiver_locations[:, :, 1] = (
+            (torch.arange(n_receivers_per_shot) * d_receiver +
+            first_receiver)
+            .repeat(n_shots, 1)
+        )
+
+        # source_amplitudes
+        source_amplitudes = (
+            (deepwave.wavelets.ricker(freq, nt, dt, 1/freq)).to(device)
+        )
+
+        #get the true seismograms in order to compute the misfit later
+        #for x-component
+        receiver_amplitudes_truex = seismox[0,:,:,:]
+        receiver_amplitudes_truex = receiver_amplitudes_truex.to(device)
+        #normalize the amplitudes
+        # rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=1, keepdim=True)
+        # rcv_amps_true_norm = receiver_amplitudes_true / (rcv_amps_true_max.abs() + 1e-10)
+        #for y-component
+        receiver_amplitudes_truey = seismoy[0,:,:,:]
+        receiver_amplitudes_truey = receiver_amplitudes_truey.to(device)
+        #set the optimizer, the parameter and the loss criterion
+        vp.requires_grad=True
+        vs.requires_grad=True 
+        rho.requires_grad=True 
+        # optimiser = torch.optim.LBFGS([vp, vs, rho])
+        optimizer = torch.optim.Adam([{'params': [vp, vs, rho], 'lr':10}])
+        # loss_fn = torch.nn.MSELoss()
+        loss_fn = torch.nn.L1Loss()
+
+        #set the number of epoch - we only need 1 so that we have computed the gradients
+        num_epochs=1
+        grad_vp=torch.zeros_like(vp)
+        grad_vs=torch.zeros_like(vp)
+        grad_rho=torch.zeros_like(vp)
+        # print("shape of grad_vp =", grad_vp.shape)
+        misfit=0
+
+        for epoch in range(num_epochs):
+                #Shuffle shot coordinates
+                idx = torch.randperm(n_shots)
+                #idx = idx.type(torch.LongTensor)
+                source_locations = source_locations.view(-1,2)[idx].view(source_locations.size())
+                #RB Shuffle true's seismograms sources with same random values
+                receiver_amplitudes_truex = receiver_amplitudes_truex[idx,:,:]
+                receiver_amplitudes_truey = receiver_amplitudes_truey[idx,:,:]
+                #direct wave is removed because we fix the first layer as the true layer
+                loss2=0
+                for it in range(num_batches):
+                    # print ("it =", it)
+                    optimizer.zero_grad()
+                    #get the source amplitude for this batch
+                    batch_src_amps = source_amplitudes.repeat(num_shots_per_batch, 1, 1)
+                    #get the true seismo for this batch
+                    batch_rcv_amps_true_x = receiver_amplitudes_truex[it::num_batches].to(device)
+                    batch_rcv_amps_true_y = receiver_amplitudes_truey[it::num_batches].to(device)
+                    batch_source_locations = source_locations[it::num_batches,:,:].to(device)
+                    batch_receiver_locations = receiver_locations[it::num_batches,:,:].to(device)
+ 
+                    predicted_data = deepwave.elastic(
+                    *deepwave.common.vpvsrho_to_lambmubuoyancy(vp, vs,
+                                                            rho),
+                    dx, dt,
+                    source_amplitudes_y=batch_src_amps,
+                    source_locations_y=batch_source_locations,
+                    receiver_locations_y=batch_receiver_locations,
+                    receiver_locations_x=batch_receiver_locations,
+                    pml_freq=freq)   #this applies free suface boudary condition 
+                    # print("just finished the forward run")
+                    predicted_x=predicted_data[-1]
+                    predicted_x=predicted_x.swapaxes(1,2)
+                    predicted_y=predicted_data[-2]
+                    predicted_y=predicted_y.swapaxes(1,2)
+                    wavefieldx=predicted_data[1]
+                    wavefieldy=predicted_data[0]
+
+                    
+                    #CC functional
+                    nrsrc=num_shots_per_batch
+                    nrcv=batch_receiver_locations.shape[2]
+                    lossinner=0
+                    lossinner=1e12*loss_fn(predicted_y,batch_rcv_amps_true_y)
+                    # print("loss=",lossinner.item())
+                    # for isrc in range(nrsrc):
+                    #     for ircv in range(nrcv):
+                    #         lossinner=lossinner+(1-(torch.dot(predicted_x[isrc,:,ircv].to(device), batch_rcv_amps_true_x[isrc,:,ircv].to(device)))/(torch.norm(predicted_x[isrc,:,ircv].to(device))*torch.norm(batch_rcv_amps_true_x[isrc,:,ircv].to(device)))
+                    #                               +1 -(torch.dot(predicted_y[isrc,:,ircv].to(device), batch_rcv_amps_true_y[isrc,:,ircv].to(device)))/(torch.norm(predicted_y[isrc,:,ircv].to(device))*torch.norm(batch_rcv_amps_true_y[isrc,:,ircv].to(device))) 
+                    #         )
+                    # for isrc in range(nrsrc):
+                    #     for ircv in range(nrcv):
+                    #         lossinner=lossinner+(1 -(torch.dot(predicted_y[isrc,:,ircv].to(device), batch_rcv_amps_true_y[isrc,:,ircv].to(device)))/(torch.norm(predicted_y[isrc,:,ircv].to(device))*torch.norm(batch_rcv_amps_true_y[isrc,:,ircv].to(device))))                      
+                    # filen = './ElasticDeepWaveMarm2/batch_rcv_amps_true_x' + str(it)+'.npy'    
+                    # np.save(filen, batch_rcv_amps_true_x.cpu().detach().numpy())
+                    # filen = './ElasticDeepWaveMarm2/batch_rcv_amps_true_y' + str(it)+'.npy'    
+                    # np.save(filen, batch_rcv_amps_true_y.cpu().detach().numpy()) 
+                    # filen = './ElasticDeepWaveMarm2/predicted_x' + str(it)+'.npy'    
+                    # np.save(filen, predicted_x.cpu().detach().numpy()) 
+                    # filen = './ElasticDeepWaveMarm2/predicted_y' + str(it)+'.npy'    
+                    # np.save(filen, predicted_y.cpu().detach().numpy())
+                    # filen = './ElasticDeepWaveMarm2/wavefieldx' + str(it)+'.npy'    
+                    # np.save(filen, wavefieldx.cpu().detach().numpy()) 
+                    # filen = './ElasticDeepWaveMarm2/wavefieldy' + str(it)+'.npy'    
+                    # np.save(filen, wavefieldy.cpu().detach().numpy())   
+                    # print ("just before the backward function")
+                    
+ 
+
+                    lossinner.backward()
+                    misfit =misfit+lossinner.item()
+
+                    vp.grad[vp_true==minvp]=0
+                    vs.grad[vs_true==minvs]=0
+                    rho.grad[rho_true==minrho]=0
+                    rvp=torch.max(torch.abs(vp))/torch.max(torch.abs(grad_vp))
+                    rvs=torch.max(torch.abs(vs))/torch.max(torch.abs(grad_vs))
+                    rrho= torch.max(torch.abs(rho))/torch.max(torch.abs(grad_rho))   
+                    # print (rvp,rvs,rrho)          
+                    #now, retrieve the gradient
+                    grad_vp=grad_vp+vp.grad #make sure that the shape of the vp-true is correct
+                    grad_vs= grad_vs+vs.grad
+                    grad_rho= grad_rho+rho.grad
+                    # print ("just after updating gradient")
+                # grad_vp[vp_true==minvp]=0
+                # print("misfit=",misfit)
+                # print("misfit=",misfit)
+                # grad_vs[vs_true==minvs]=0
+                # grad_rho[rho_true==minrho]=0
+                # print("shape of grad_vp 2=", grad_vp.shape)
+       
+  
+
+        return grad_vp, grad_vs, grad_rho, misfit
+
+class ElasticBpVAEDeepWave_Net(nn.Module):
+    def __init__(self,outer_nc, inner_nc, input_nc=None,
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+        super(ElasticBpVAEDeepWave_Net, self).__init__()
+        self.is_deconv     = False
+        self.in_channels   = outer_nc
+        self.is_batchnorm  = False
+        self.n_classes     = 1
+        # filters = [32, 64, 128, 256]
+        filters = [16,32,64,128]
+        # filters = [4,8,16,32]
+        latent_dim = 16
+        #combine the two component of the wavefield
+        self.combine1 = nn.Conv2d(self.in_channels, 1, 3, 1, 1)
+        self.combine2 = nn.Conv2d(self.in_channels, 1, 3, 1, 1)
+        #start the encoder
+        self.down1   = unetDown(2, filters[0],  self.is_batchnorm)
+        self.down2   = unetDown(filters[0], filters[1], self.is_batchnorm)
+        self.down3   = unetDown(filters[1], filters[2], self.is_batchnorm)
+        self.down4   = unetDown(filters[2], filters[3], self.is_batchnorm)
+        #variance and mean for vs-vp
+        self.smu_vsp = (nn.Linear(filters[3]*945*2, latent_dim))
+        # self.smu_vs = (nn.Linear(filters[3]*91, latent_dim))
+        self.svar_vsp = (nn.Linear(filters[3]*945*2, latent_dim))
+        #variance and mean for rho
+        # self.smu_rho = (nn.Linear(filters[3]*945*2, latent_dim))
+        # self.svar_rho = (nn.Linear(filters[3]*945*2, latent_dim))
+        #now start preparing the latent vectors for decoding
+        # self.decoder_vs = nn.Linear(latent_dim, filters[3]*91)
+        self.decoder_vsp = nn.Linear(latent_dim, filters[3]*52*30) #for marmousi 101x101
+        # self.decoder_rho = nn.Linear(latent_dim, filters[3]*52*30)
+
+        # start the decoder 
+        #in the decoder, we will have different decoder network for each model (distinict 1 for vp, vs, and rho)
+        #vp decoder
+        self.up31     = autoUp5(filters[3], filters[2], self.is_deconv)
+        self.up21     = autoUp5(filters[2], filters[1], self.is_deconv)
+        self.up11     = autoUp5(filters[1], filters[0], self.is_deconv)
+        #vs decoder
+        self.up32     = autoUp5(int(filters[3]), int(filters[2]), self.is_deconv)
+        self.up22     = autoUp5(int(filters[2]), int(filters[1]), self.is_deconv)
+        self.up12     = autoUp5(int(filters[1]), int(filters[0]), self.is_deconv)
+        #rho decoder
+        self.rho=True
+        self.up33     = autoUp5(int(filters[3]), int(filters[2]), self.is_deconv,self.rho)
+        self.up23     = autoUp5(int(filters[2]), int(filters[1]), self.is_deconv,self.rho)
+        self.up13     = autoUp5(int(filters[1]), int(filters[0]), self.is_deconv,self.rho)
+        #transform the outputs to models
+        self.f11      =  nn.Conv2d(filters[0],int(filters[0]), 1)
+        self.f12      =  nn.Conv2d(int(filters[0]),int(filters[0]), 1)
+        self.f13      =  nn.Conv2d(int(filters[0]),int(filters[0]), 1)
+
+        #transform the outputs to models     
+        self.vp     =   nn.Conv2d(int(filters[0]),1,1)
+        self.vs     =   nn.Conv2d(int(filters[0]),1,1)
+        self.rho     =   nn.Conv2d(int(filters[0]),1,1)
+
+        # self.final   =  nn.Sigmoid()
+    # def fromImpedanceToLame(Zp: Tensor,
+    #     Zs: Tensor,
+    #     eps: float = 1e-15) -> Tuple[Tensor, Tensor, Tensor]:
+        
+    #     lamb = (vp**2 - 2 * vs**2) * rho
+    #     mu = vs**2 * rho
+    #     buoyancy = 1 / (rho**2 + eps) * rho
+    #     return lamb, mu, buoyancy
+
+        
+    def forward(self, inputs1, inputs2, lstart, epoch1, latentI, lowf, inputs3, freq, idx, it):
+        # filters = [32, 64, 128, 256]
+        # filters = [4,8,16,32]
+        filters = [16,32,64,128]
+        # filters = [8,16,32, 64]
+        label_dsp_dim = (151,250)
+        lowf=lowf
+
+        minvp = torch.min(inputs1[:,0,:,:])
+        maxvp = torch.max(inputs1[:,0,:,:])
+        
+        minvs = torch.min(inputs1[:,1,:,:])
+        maxvs = torch.max(inputs1[:,1,:,:])
+        
+        minrho = torch.min(inputs1[:,2,:,:])
+        maxrho = torch.max(inputs1[:,2,:,:])
+
+
+        combine1 = self.combine1((inputs2[:,:,0:4001:4,:]))
+        combine2 = self.combine2((inputs3[:,:,0:4001:4,:]))
+
+
+        c1c2 = torch.cat((combine1,combine2),axis=1)
+
+        down1  = self.down1(c1c2)
+        down2  = self.down2(down1)
+        down3  = self.down3(down2)
+        # down4  = self.down4(down3)
+        # print("down4",down4)
+        result = torch.flatten(down3, start_dim=1)
+        # print("result shape =",result.shape)
+        #compute mu,logvar for vs-vp
+        mu_vsp = self.smu_vsp(result)
+        # mu_vs = self.smu_vs(result)
+        log_var_vsp = self.svar_vsp(result)
+
+        zvsp = self.reparameterize(mu_vsp, log_var_vsp)
+
+        
+        #compute mu,logvar for rho
+        # mu_rho = self.smu_rho(result)
+        # log_var_rho = self.svar_rho(result)
+        # zrho = self.reparameterize(mu_rho, log_var_rho)
+   
+        
+        z_vsp = self.decoder_vsp(zvsp)
+        z_rho = self.decoder_vsp(zvsp)
+        # z_vs = self.decoder_vs(mu_vs)
+        z_vsp = z_vsp.view(-1, filters[3], 30, 52)
+        z_rho = z_rho.view(-1,filters[3],30,52)
+        # z_vs = z_vs.view(-1,filters[3],7,13)
+
+        # print("z_vsp",z_vsp)
+        # print("z_rho",z_rho)
+    
+        up31    = self.up31(z_vsp)
+        up32    = self.up32(z_vsp)
+
+        up33    = self.up33(z_rho) #Abdo, this is only used for rho?
+
+        up21    = self.up21(up31)
+        up22    = self.up22(up32)
+        up23    = self.up23(up33)
+
+        up11    = self.up11(up21)
+        up12    = self.up12(up22)
+        up13    = self.up13(up23)
+
+        # print ("up11",up11)
+        # print ("up12",up12)
+        # print ("up13",up13)
+
+        up11    = up11[:,:,10:10+label_dsp_dim[0],10:10+label_dsp_dim[1]].contiguous()
+        up12    = up12[:,:,10:10+label_dsp_dim[0],10:10+label_dsp_dim[1]].contiguous()
+        up13    = up13[:,:,10:10+label_dsp_dim[0],10:10+label_dsp_dim[1]].contiguous()
+        
+        f11     = self.f11(up11)
+        f12     = self.f12(up12)
+        f13     = self.f13(up13)
+
+
+
+        vp1f     = self.vp(f11)
+        vs1f     = self.vs(f12)
+        rho1f    = self.rho(f13)
+
+        # vp1f     = self.final(vp1f)
+        # vs1f     = self.final(vs1f)
+        # rho1f    = self.final(rho1f)
+
+        vp1    = torch.unsqueeze(lowf[:,0,:,:],1) + vp1f
+        vs1    = torch.unsqueeze(lowf[:,1,:,:],1) + vs1f
+        rho1   = torch.unsqueeze(lowf[:,2,:,:],1) + 0.1*rho1f
+        truevp,truevs,truerho=torch.unsqueeze(inputs1[:,0,:,:],1),torch.unsqueeze(inputs1[:,1,:,:],1),torch.unsqueeze(inputs1[:,2,:,:],1)
+
+        # fp1=self.final(f11)
+        # fs1=self.final(f12)
+        # vp1=minvp+fp1*(maxvp-minvp)
+        # vs1=minvs+fs1*(maxvs-minvs)
+        # vs1 = truevs
+        # rho1=truerho
+
+
+        vp1    = torch.clip(vp1, min=minvp, max=maxvp)
+        vs1    = torch.clip(vs1, min=minvs, max=maxvs)
+        rho1   = torch.clip(rho1, min=minrho, max=maxrho)
+
+
+        vp1[(truerho==1000)] = minvp
+        vs1[(truerho==1000)] = 0
+        rho1 [(truerho==1000)] = 1000
+
+
+        latent1 = 0
+        grad = 0*vp1
+        lossT = 0.0
+        vp_grad = vp1*0
+        vs_grad = vp1*0
+        rho_grad = vp1*0
+        
+        print(epoch1,lstart)
+        if (epoch1 > lstart):
+            [vp_grad, vs_grad, rho_grad, lossT] = self.prop(vp1, vs1, rho1, inputs1, epoch1, freq, idx, it, inputs2,inputs3)
+
+
+        return vp1, vs1, rho1, grad, latent1, vp_grad, vs_grad, rho_grad, lossT,mu_vsp,log_var_vsp
+
+    
+    def reparameterize(self, mu, logvar):
+        """
+        Reparameterization trick to sample from N(mu, var) from
+        N(0,1).
+        :param mu: (Tensor) Mean of the latent Gaussian [B x D]
+        :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
+        :return: (Tensor) [B x D]
+        """
+        std = torch.exp(0.5 * logvar) #we do it this way to make sure that the standard deviation is always positive.
+        eps = torch.randn_like(std) #draw random variable between -1 and 1 (mu=0,and sigma=1)
+        return eps * std  + mu
+    # Initialization of Parameters
+    def  _initialize_weights(self):
+          for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m,nn.ConvTranspose2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+    
+    # forward modeling to compute gradients
+    #note that we do not pass the data here, instead we pass the data in su fomat to denise to compute the misfit and the gradient
+    def prop(self, vp1, vs1, rho1, true, epoch1, freq, idx, it, seismox, seismoy):
+        torch.cuda.empty_cache()
+        torch.cuda.set_device(2)  
+        GPU_string='cuda:'+str(2)
+        device = torch.device(GPU_string)
+        #get the current models
+        vp=  vp1[0,0,:,:].detach().to(device)
+        vs= vs1[0,0,:,:].detach().to(device)
+        rho=rho1[0,0,:,:].detach().to(device)
+        #get the true models - not sure if we need this
+        vp_true = true[0,0,:,:]
+        vs_true = true[0,1,:,:]
+        rho_true = true[0,2,:,:]
+
+        minvp=torch.min(vp_true)
+        minvs=torch.min(vs_true)
+        minrho=torch.min(rho_true)
+
+        #set forward modeling inputs
+        ny = 151
+        nx = 250
+        dx = 20
+
+        #source and receivers
+        n_shots = 24
+        n_sources_per_shot = 1
+        source_depth = 5
+        first_source = 10
+        d_source=10
+        n_receivers_per_shot = 240
+        d_receiver = 1
+        first_receiver = 5
+        receiver_depth = 20
+        #batches
+        num_batches = 8 #just for now, we may need to try other options
+        num_shots_per_batch = int(n_shots / num_batches) #ceil the number to nearst integer.
+
+        #source wavelet
+        freq =5
+        nt = 4001
+        dt = 0.001
+        time_delay = 1.0/ freq
+
+        # source_locations
+        source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
+                                    dtype=torch.long, device=device)
+        source_locations[..., 0] = source_depth
+        source_locations[:, 0, 1] = (torch.arange(n_shots) * d_source +
+                                     first_source)
+
+        # receiver_locations
+        receiver_locations = torch.zeros(n_shots, n_receivers_per_shot, 2,
+                                        dtype=torch.long, device=device)
+        receiver_locations[..., 0] = receiver_depth
+        receiver_locations[:, :, 1] = (
+            (torch.arange(n_receivers_per_shot) * d_receiver +
+            first_receiver)
+            .repeat(n_shots, 1)
+        )
+
+        # source_amplitudes
+        source_amplitudes = (
+            (deepwave.wavelets.ricker(freq, nt, dt, time_delay)).to(device)
+        )
+
+        #get the true seismograms in order to compute the misfit later
+        #for x-component
+        receiver_amplitudes_truex = seismox[0,:,:,:]
+        receiver_amplitudes_truex = receiver_amplitudes_truex.to(device)
+        #normalize the amplitudes
+        # rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=1, keepdim=True)
+        # rcv_amps_true_norm = receiver_amplitudes_true / (rcv_amps_true_max.abs() + 1e-10)
+        #for y-component
+        receiver_amplitudes_truey = seismoy[0,:,:,:]
+        receiver_amplitudes_truey = receiver_amplitudes_truey.to(device)
+        #set the optimizer, the parameter and the loss criterion
+        vp.requires_grad=True
+        vs.requires_grad=True 
+        rho.requires_grad=True 
+        # optimiser = torch.optim.LBFGS([vp, vs, rho])
+        optimizer = torch.optim.Adam([{'params': [vp, vs, rho], 'lr':10}])#what if we change this?
+        # loss_fn = torch.nn.MSELoss(reduction='sum')
+        loss_fn = torch.nn.L1Loss()
+        # loss_fn = torch.nn.L1Loss(reduction='sum')
+
+        #set the number of epoch - we only need 1 so that we have computed the gradients
+        num_epochs=1
+        grad_vp=torch.zeros_like(vp)
+        grad_vs=torch.zeros_like(vp)
+        grad_rho=torch.zeros_like(vp)
+        # print("shape of grad_vp =", grad_vp.shape)
+        misfit=0
+
+        for epoch in range(num_epochs):
+                #Shuffle shot coordinates
+                idx = torch.randperm(n_shots)
+                #idx = idx.type(torch.LongTensor)
+                source_locations = source_locations.view(-1,2)[idx].view(source_locations.size())
+                #RB Shuffle true's seismograms sources with same random values
+                receiver_amplitudes_truex = receiver_amplitudes_truex[idx,:,:]
+                receiver_amplitudes_truey = receiver_amplitudes_truey[idx,:,:]
+                #direct wave is removed because we fix the first layer as the true layer
+                
+                for it in range(num_batches):
+                    # print ("it =", it)
+                    optimizer.zero_grad()
+                    #get the source amplitude for this batch
+                    batch_src_amps = source_amplitudes.repeat(num_shots_per_batch, 1, 1)
+                    #get the true seismo for this batch
+                    batch_rcv_amps_true_x = receiver_amplitudes_truex[it::num_batches].to(device)
+                    batch_rcv_amps_true_y = receiver_amplitudes_truey[it::num_batches].to(device)
+                    batch_source_locations = source_locations[it::num_batches,:,:].to(device)
+                    batch_receiver_locations = receiver_locations[it::num_batches,:,:].to(device)
+ 
+                    predicted_data = deepwave.elastic(
+                    *deepwave.common.vpvsrho_to_lambmubuoyancy(vp, vs,
+                                                            rho),
+                    dx, dt,
+                    source_amplitudes_y=batch_src_amps,
+                    source_locations_y=batch_source_locations,
+                    receiver_locations_y=batch_receiver_locations,
+                    receiver_locations_x=batch_receiver_locations,
+                    pml_freq=freq)   #this applies free suface boudary condition 
+                    # print("just finished the forward run")
+                    predicted_x=predicted_data[-1]
+                    predicted_x=predicted_x.swapaxes(1,2)
+                    predicted_y=predicted_data[-2]
+                    predicted_y=predicted_y.swapaxes(1,2)
+
+                    #CC functional
+                    nrsrc=num_shots_per_batch
+                    nrcv=batch_receiver_locations.shape[2]
+                    lossinner=0
+                    lossinner=1e10*loss_fn(predicted_y,batch_rcv_amps_true_y)
+
+                    # for isrc in range(nrsrc):
+                    #     for ircv in range(nrcv):
+                    #         lossinner=lossinner+(1-(torch.dot(predicted_x[isrc,:,ircv].to(device), batch_rcv_amps_true_x[isrc,:,ircv].to(device)))/(torch.norm(predicted_x[isrc,:,ircv].to(device))*torch.norm(batch_rcv_amps_true_x[isrc,:,ircv].to(device)))
+                    #                               +1 -(torch.dot(predicted_y[isrc,:,ircv].to(device), batch_rcv_amps_true_y[isrc,:,ircv].to(device)))/(torch.norm(predicted_y[isrc,:,ircv].to(device))*torch.norm(batch_rcv_amps_true_y[isrc,:,ircv].to(device))) 
+                    #         )
+                    #only consider the y-component of the data
+                    # for isrc in range(nrsrc):
+                    #     for ircv in range(nrcv):
+                    #         lossinner=lossinner+(1 -(torch.dot(predicted_y[isrc,:,ircv].to(device), batch_rcv_amps_true_y[isrc,:,ircv].to(device)))/(torch.norm(predicted_y[isrc,:,ircv].to(device))*torch.norm(batch_rcv_amps_true_y[isrc,:,ircv].to(device))))                             
+                    # print ("just before the backward function")
+                    lossinner.backward()
+                    misfit =misfit+lossinner.item()
+                    #now, retrieve the gradient
+                    grad_vp=grad_vp+vp.grad #make sure that the shape of the vp-true is correct
+                    grad_vs= grad_vs+vs.grad
+                    grad_rho= grad_rho+rho.grad
+                    # print ("just after updating gradient")
+                grad_vp[rho_true==1000]=0
+                grad_vs[rho_true==1000]=0
+                grad_rho[rho_true==1000]=0
+                # print("shape of grad_vp 2=", grad_vp.shape)
+       
+  
+
+        return grad_vp, grad_vs, grad_rho, misfit
+
+
+class ElasticToyVAEDeepWave_Net(nn.Module):
+    def __init__(self,outer_nc, inner_nc, input_nc=None,
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+        super(ElasticToyVAEDeepWave_Net, self).__init__()
+        self.is_deconv     = False
+        self.in_channels   = outer_nc
+        self.is_batchnorm  = False
+        self.n_classes     = 1
+        filters = [32, 64, 128, 256]
+        # filters = [16,32,64,128]
+        # filters = [4,8,16,32]
+        latent_dim = 16
+        #combine the two component of the wavefield
+        self.combine1 = nn.Conv2d(self.in_channels, 1, 1, 1, 1)
+        self.combine2 = nn.Conv2d(self.in_channels, 1, 1, 1, 1)
+        #start the encoder
+        self.down1   = unetDown(2, filters[0],  self.is_batchnorm)
+        self.down2   = unetDown(filters[0], filters[1], self.is_batchnorm)
+        self.down3   = unetDown(filters[1], filters[2], self.is_batchnorm)
+        self.down4   = unetDown(filters[2], filters[3], self.is_batchnorm)
+        #variance and mean for vs-vp
+        self.smu_vsp = (nn.Linear(filters[3]*169, latent_dim))
+        # self.smu_vs = (nn.Linear(filters[3]*91, latent_dim))
+        self.svar_vsp = (nn.Linear(filters[3]*169, latent_dim))
+        #variance and mean for rho
+        self.smu_rho = (nn.Linear(filters[3]*169, latent_dim))
+        self.svar_rho = (nn.Linear(filters[3]*169, latent_dim))
+        #now start preparing the latent vectors for decoding
+        # self.decoder_vs = nn.Linear(latent_dim, filters[3]*91)
+        self.decoder_vsp = nn.Linear(latent_dim, filters[3]*91) #for marmousi 101x101
+        self.decoder_rho = nn.Linear(latent_dim, filters[3]*91)
+
+        # start the decoder 
+        #in the decoder, we will have different decoder network for each model (distinict 1 for vp, vs, and rho)
+        #vp decoder
+        self.up31     = autoUp5(filters[3], filters[2], self.is_deconv)
+        self.up21     = autoUp5(filters[2], filters[1], self.is_deconv)
+        self.up11     = autoUp5(filters[1], filters[0], self.is_deconv)
+        #vs decoder
+        self.up32     = autoUp5(int(filters[3]), int(filters[2]), self.is_deconv)
+        self.up22     = autoUp5(int(filters[2]), int(filters[1]), self.is_deconv)
+        self.up12     = autoUp5(int(filters[1]), int(filters[0]), self.is_deconv)
+        #rho decoder
+        self.rho=True
+        self.up33     = autoUp5(int(filters[3]), int(filters[2]), self.is_deconv,self.rho)
+        self.up23     = autoUp5(int(filters[2]), int(filters[1]), self.is_deconv,self.rho)
+        self.up13     = autoUp5(int(filters[1]), int(filters[0]), self.is_deconv,self.rho)
+        #transform the outputs to models
+        self.f11      =  nn.Conv2d(filters[0],int(filters[0]), 1)
+        self.f12      =  nn.Conv2d(int(filters[0]),int(filters[0]), 1)
+        self.f13      =  nn.Conv2d(int(filters[0]),int(filters[0]), 1)
+
+        #transform the outputs to models     
+        self.vp     =   nn.Conv2d(int(filters[0]),1,1)
+        self.vs     =   nn.Conv2d(int(filters[0]),1,1)
+        self.rho     =   nn.Conv2d(int(filters[0]),1,1)
+
+        self.final   =  nn.Sigmoid()
+        
+    def forward(self, inputs1, inputs2, lstart, epoch1, latentI, lowf, inputs3, freq, idx, it):
+        filters = [32, 64, 128, 256]
+        # filters = [4,8,16,32]
+        # filters = [16,32,64,128]
+        # filters = [8,16,32, 64]
+        label_dsp_dim = (30,100)
+        lowf=lowf
+
+        minvp = torch.min(inputs1[:,0,:,:])
+        maxvp = torch.max(inputs1[:,0,:,:])
+        
+        minvs = torch.min(inputs1[:,1,:,:])
+        maxvs = torch.max(inputs1[:,1,:,:])
+        
+        minrho = torch.min(inputs1[:,2,:,:])
+        maxrho = torch.max(inputs1[:,2,:,:])
+
+
+        combine1 = self.combine1((inputs2[:,:,:,:]/torch.max(inputs2[:,:,:,:])))
+        combine2 = self.combine2((inputs3[:,:,:,:]/torch.max(inputs3[:,:,:,:])))
+
+
+        c1c2 = torch.cat((combine1,combine2),axis=1)
+
+        down1  = self.down1(c1c2)
+        down2  = self.down2(down1)
+        down3  = self.down3(down2)
+        # down4  = self.down4(down3)
+        # print("down4",down4)
+        result = torch.flatten(down3, start_dim=1)
+        # print("result shape =",result.shape)
+        #compute mu,logvar for vs-vp
+        mu_vsp = self.smu_vsp(result)
+        # mu_vs = self.smu_vs(result)
+        log_var_vsp = self.svar_vsp(result)
+
+        zvsp = self.reparameterize(mu_vsp, log_var_vsp)
+
+        
+        #compute mu,logvar for rho
+        mu_rho = self.smu_rho(result)
+        log_var_rho = self.svar_rho(result)
+        zrho = self.reparameterize(mu_rho, log_var_rho)
+   
+        
+        z_vsp = self.decoder_vsp(zvsp)
+        z_rho = self.decoder_vsp(zrho)
+        # z_vs = self.decoder_vs(mu_vs)
+        z_vsp = z_vsp.view(-1, filters[3], 7, 13)
+        z_rho = z_rho.view(-1,filters[3],7,13)
+        # z_vs = z_vs.view(-1,filters[3],7,13)
+
+        # print("z_vsp",z_vsp)
+        # print("z_rho",z_rho)
+    
+        up31    = self.up31(z_vsp)
+        up32    = self.up32(z_vsp)
+
+        up33    = self.up33(z_rho) #Abdo, this is only used for rho?
+
+        up21    = self.up21(up31)
+        up22    = self.up22(up32)
+        up23    = self.up23(up33)
+
+        up11    = self.up11(up21)
+        up12    = self.up12(up22)
+        up13    = self.up13(up23)
+
+        # print ("up11",up11)
+        # print ("up12",up12)
+        # print ("up13",up13)
+
+        up11    = up11[:,:,1:1+label_dsp_dim[0],1:1+label_dsp_dim[1]].contiguous()
+        up12    = up12[:,:,1:1+label_dsp_dim[0],1:1+label_dsp_dim[1]].contiguous()
+        up13    = up13[:,:,1:1+label_dsp_dim[0],1:1+label_dsp_dim[1]].contiguous()
+        
+        f11     = self.f11(up11)
+        f12     = self.f12(up12)
+        f13     = self.f13(up13)
+
+
+
+        vp1f     = self.vp(f11)
+        vs1f     = self.vs(f12)
+        rho1f    = self.rho(f13)
+
+        # vp1f     = self.final(vp1f)
+        # vs1f     = self.final(vs1f)
+        # rho1f    = self.final(rho1f)
+
+        vp1    = torch.unsqueeze(lowf[:,0,:,:],1) + vp1f
+        vs1    = torch.unsqueeze(lowf[:,1,:,:],1) + vs1f
+        rho1   = torch.unsqueeze(lowf[:,2,:,:],1) + rho1f
+        truevp,truevs,truerho=torch.unsqueeze(inputs1[:,0,:,:],1),torch.unsqueeze(inputs1[:,1,:,:],1),torch.unsqueeze(inputs1[:,2,:,:],1)
+
+        # fp1=self.final(f11)
+        # fs1=self.final(f12)
+        # vp1=minvp+fp1*(maxvp-minvp)
+        # vs1=minvs+fs1*(maxvs-minvs)
+        # vs1 = truevs
+        # rho1=truerho
+
+
+        # vp1    = torch.clip(vp1, min=minvp, max=maxvp)
+        # vs1    = torch.clip(vs1, min=minvs, max=maxvs)
+        # rho1   = torch.clip(rho1, min=minrho, max=maxrho)
+
+
+        # vp1[(truevp==minvp)] = minvp
+        # vs1[(truevs==minvs)] = minvs
+        # rho1 [(truerho==minrho)] = minrho
+
+
+        latent1 = 0
+        grad = 0*vp1
+        lossT = 0.0
+        vp_grad = vp1*0
+        vs_grad = vp1*0
+        rho_grad = vp1*0
+        
+        print(epoch1,lstart)
+        if (epoch1 > lstart):
+            [vp_grad, vs_grad, rho_grad, lossT] = self.prop(vp1, vs1, rho1, inputs1, epoch1, freq, idx, it, inputs2,inputs3)
+
+
+        return vp1, vs1, rho1, grad, latent1, vp_grad, vs_grad, rho_grad, lossT,mu_vsp,log_var_vsp,mu_rho,log_var_rho
+    
+    def reparameterize(self, mu, logvar):
+        """
+        Reparameterization trick to sample from N(mu, var) from
+        N(0,1).
+        :param mu: (Tensor) Mean of the latent Gaussian [B x D]
+        :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
+        :return: (Tensor) [B x D]
+        """
+        std = torch.exp(0.5 * logvar) #we do it this way to make sure that the standard deviation is always positive.
+        eps = torch.randn_like(std) #draw random variable between -1 and 1 (mu=0,and sigma=1)
+        return eps * std  + mu
+    # Initialization of Parameters
+    def  _initialize_weights(self):
+          for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m,nn.ConvTranspose2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+    
+    # forward modeling to compute gradients
+    #note that we do not pass the data here, instead we pass the data in su fomat to denise to compute the misfit and the gradient
+    def prop(self, vp1, vs1, rho1, true, epoch1, freq, idx, it, seismox, seismoy):
+        torch.cuda.empty_cache()
+        torch.cuda.set_device(2)  
+        GPU_string='cuda:'+str(2)
+        device = torch.device(GPU_string)
+        #get the current models
+        vp=  vp1[0,0,:,:].detach().to(device)
+        vs= vs1[0,0,:,:].detach().to(device)
+        rho=rho1[0,0,:,:].detach().to(device)
+        #get the true models - not sure if we need this
+        vp_true = true[0,0,:,:]
+        vs_true = true[0,1,:,:]
+        rho_true = true[0,2,:,:]
+
+        minvp=torch.min(vp_true)
+        minvs=torch.min(vs_true)
+        minrho=torch.min(rho_true)
+
+        #set forward modeling inputs
+        ny = 30
+        nx = 100
+        dx = 4.0
+
+        #source and receivers
+        n_shots = 8
+        n_sources_per_shot = 1
+        source_depth = 2
+        first_source = 8
+        d_source=12
+        n_receivers_per_shot = 99
+        d_receiver = 1
+        first_receiver = 0
+        receiver_depth = 2
+        #batches
+        num_batches = 1 #just for now, we may need to try other options
+        num_shots_per_batch = int(n_shots / num_batches) #ceil the number to nearst integer.
+
+        #source wavelet
+        freq =15
+        nt = 200
+        dt = 0.004
+        time_delay = 1.5 / freq
+
+        # source_locations
+        source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
+                                    dtype=torch.long, device=device)
+        source_locations[..., 0] = source_depth
+        source_locations[:, 0, 1] = (torch.arange(n_shots) * d_source +
+                                     first_source)
+
+        # receiver_locations
+        receiver_locations = torch.zeros(n_shots, n_receivers_per_shot, 2,
+                                        dtype=torch.long, device=device)
+        receiver_locations[..., 0] = receiver_depth
+        receiver_locations[:, :, 1] = (
+            (torch.arange(n_receivers_per_shot) * d_receiver +
+            first_receiver)
+            .repeat(n_shots, 1)
+        )
+
+        # source_amplitudes
+        source_amplitudes = (
+            (deepwave.wavelets.ricker(freq, nt, dt, 1.5/freq)).to(device)
+        )
+
+        #get the true seismograms in order to compute the misfit later
+        #for x-component
+        receiver_amplitudes_truex = seismox[0,:,:,:]
+        receiver_amplitudes_truex = receiver_amplitudes_truex.to(device)
+        #normalize the amplitudes
+        # rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=1, keepdim=True)
+        # rcv_amps_true_norm = receiver_amplitudes_true / (rcv_amps_true_max.abs() + 1e-10)
+        #for y-component
+        receiver_amplitudes_truey = seismoy[0,:,:,:]
+        receiver_amplitudes_truey = receiver_amplitudes_truey.to(device)
+        #set the optimizer, the parameter and the loss criterion
+        vp.requires_grad=True
+        vs.requires_grad=True 
+        rho.requires_grad=True 
+        # optimiser = torch.optim.LBFGS([vp, vs, rho])
+        optimizer = torch.optim.Adam([{'params': [vp, vs, rho], 'lr':10}])
+        # loss_fn = torch.nn.MSELoss()
+        loss_fn = torch.nn.L1Loss()
+
+        #set the number of epoch - we only need 1 so that we have computed the gradients
+        num_epochs=1
+        grad_vp=torch.zeros_like(vp)
+        grad_vs=torch.zeros_like(vp)
+        grad_rho=torch.zeros_like(vp)
+        # print("shape of grad_vp =", grad_vp.shape)
+        misfit=0
+
+        for epoch in range(num_epochs):
+                #Shuffle shot coordinates
+                idx = torch.randperm(n_shots)
+                #idx = idx.type(torch.LongTensor)
+                source_locations = source_locations.view(-1,2)[idx].view(source_locations.size())
+                #RB Shuffle true's seismograms sources with same random values
+                receiver_amplitudes_truex = receiver_amplitudes_truex[idx,:,:]
+                receiver_amplitudes_truey = receiver_amplitudes_truey[idx,:,:]
+                #direct wave is removed because we fix the first layer as the true layer
+                
+                for it in range(num_batches):
+                    # print ("it =", it)
+                    optimizer.zero_grad()
+                    #get the source amplitude for this batch
+                    batch_src_amps = source_amplitudes.repeat(num_shots_per_batch, 1, 1)
+                    #get the true seismo for this batch
+                    batch_rcv_amps_true_x = receiver_amplitudes_truex[it::num_batches].to(device)
+                    batch_rcv_amps_true_y = receiver_amplitudes_truey[it::num_batches].to(device)
+                    batch_source_locations = source_locations[it::num_batches,:,:].to(device)
+                    batch_receiver_locations = receiver_locations[it::num_batches,:,:].to(device)
+ 
+                    predicted_data = deepwave.elastic(
+                    *deepwave.common.vpvsrho_to_lambmubuoyancy(vp, vs,
+                                                            rho),
+                    dx, dt,
+                    source_amplitudes_y=batch_src_amps,
+                    source_locations_y=batch_source_locations,
+                    receiver_locations_y=batch_receiver_locations,
+                    receiver_locations_x=batch_receiver_locations,
+                    pml_freq=freq)   #this applies free suface boudary condition 
+                    # print("just finished the forward run")
+                    predicted_x=predicted_data[-1]
+                    predicted_x=predicted_x.swapaxes(1,2)
+                    predicted_y=predicted_data[-2]
+                    predicted_y=predicted_y.swapaxes(1,2)
+
+                    #CC functional
+                    nrsrc=num_shots_per_batch
+                    nrcv=batch_receiver_locations.shape[2]
+                    lossinner=0
+                    lossinner=1e13*loss_fn(predicted_y,batch_rcv_amps_true_y)
+
+                    # for isrc in range(nrsrc):
+                    #     for ircv in range(nrcv):
+                    #         lossinner=lossinner+(1-(torch.dot(predicted_x[isrc,:,ircv].to(device), batch_rcv_amps_true_x[isrc,:,ircv].to(device)))/(torch.norm(predicted_x[isrc,:,ircv].to(device))*torch.norm(batch_rcv_amps_true_x[isrc,:,ircv].to(device)))
+                    #                               +1 -(torch.dot(predicted_y[isrc,:,ircv].to(device), batch_rcv_amps_true_y[isrc,:,ircv].to(device)))/(torch.norm(predicted_y[isrc,:,ircv].to(device))*torch.norm(batch_rcv_amps_true_y[isrc,:,ircv].to(device))) 
+                    #         )
+                    #only consider the y-component of the data
+                    # for isrc in range(nrsrc):
+                    #     for ircv in range(nrcv):
+                    #         lossinner=lossinner+(1 -(torch.dot(predicted_y[isrc,:,ircv].to(device), batch_rcv_amps_true_y[isrc,:,ircv].to(device)))/(torch.norm(predicted_y[isrc,:,ircv].to(device))*torch.norm(batch_rcv_amps_true_y[isrc,:,ircv].to(device))))                             
+                    # print ("just before the backward function")
+                    lossinner.backward()
+                    misfit =misfit+lossinner.item()
+                    #now, retrieve the gradient
+                    grad_vp=grad_vp+vp.grad #make sure that the shape of the vp-true is correct
+                    grad_vs= grad_vs+vs.grad
+                    grad_rho= grad_rho+rho.grad
+                    # print ("just after updating gradient")
+                grad_vp[vp_true==minvp]=0
+                grad_vs[vs_true==minvs]=0
+                grad_rho[rho_true==minrho]=0
+                # print("shape of grad_vp 2=", grad_vp.shape)
+       
+  
+
+        return grad_vp, grad_vs, grad_rho, misfit
+
+
+
+class ElasticVAE_Net(nn.Module):
+    def __init__(self,outer_nc, inner_nc, input_nc=None,
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+        super(ElasticVAE_Net, self).__init__()
+        self.is_deconv     = False
+        self.in_channels   = outer_nc
+        self.is_batchnorm  = False
+        self.n_classes     = 1
+        filters = [64, 128, 256, 512]
+        # filters = [16,32,64,128]
+        # filters = [8,16,32, 64]
+        latent_dim = 8 #try to increase this for multiparameter inversion
+        #combine the two component of the wavefield
+        self.combine1 = nn.Conv2d(self.in_channels, 1, 3, 1, 1)
+        self.combine2 = nn.Conv2d(self.in_channels, 1, 3, 1, 1)
+        #start the encoder
+        self.down1   = unetDown(2, filters[0], self.is_batchnorm)
+        self.down2   = unetDown(filters[0], filters[1], self.is_batchnorm)
+        self.down3   = unetDown(filters[1], filters[2], self.is_batchnorm)
+        self.down4   = unetDown(filters[2], filters[3], self.is_batchnorm)
+        #variance and mean for vs-vp
+        self.smu_vsp = (nn.Linear(filters[3]*63*23, latent_dim))
+        self.svar_vsp = (nn.Linear(filters[3]*63*23, latent_dim))
+        #variance and mean for rho
+        # self.smu_rho = (nn.Linear(filters[3]*63*23, latent_dim))
+        # self.svar_rho = (nn.Linear(filters[3]*63*23, latent_dim))
+        #now start preparing the latent vectors for decoding
+        self.decoder_vsp = nn.Linear(latent_dim, filters[3]*63*23) #for marmousi 101x101
+        # self.decoder_rho = nn.Linear(latent_dim, filters[3]*63*23)
+
+        # start the decoder 
+        #in the decoder, we will have different decoder network for each model (distinict 1 for vp, vs, and rho)
+        #vp decoder
+        self.up31     = UpElasticVAE(filters[3], filters[2], self.is_deconv, self.is_batchnorm)
+        self.up21     = UpElasticVAE(filters[2], filters[1], self.is_deconv, self.is_batchnorm)
+        self.up11     = UpElasticVAE(filters[1], filters[0], self.is_deconv, self.is_batchnorm)
+        #vs decoder
+        self.up32     = UpElasticVAE(int(filters[3]), int(filters[2]), self.is_deconv,self.is_batchnorm)
+        self.up22     = UpElasticVAE(int(filters[2]), int(filters[1]), self.is_deconv,self.is_batchnorm)
+        self.up12     = UpElasticVAE(int(filters[1]), int(filters[0]), self.is_deconv,self.is_batchnorm)
+        #rho decoder
+        self.up33     = UpElasticVAE(int(filters[3]), int(filters[2]), self.is_deconv,self.is_batchnorm)
+        self.up23     = UpElasticVAE(int(filters[2]), int(filters[1]), self.is_deconv,self.is_batchnorm)
+        self.up13     = UpElasticVAE(int(filters[1]), int(filters[0]), self.is_deconv,self.is_batchnorm)
+        #transform the outputs to models
+        # self.f11      =  nn.Conv2d(filters[0],int(filters[0]), 1)
+        # self.f12      =  nn.Conv2d(int(filters[0]),int(filters[0]), 1)
+        # self.f13      =  nn.Conv2d(int(filters[0]),int(filters[0]), 1)
+
+        self.f11      =  nn.Conv2d(filters[0],filters[0], 1)
+        self.f12      =  nn.Conv2d(int(filters[0]),filters[0], 1)
+        self.f13      =  nn.Conv2d(int(filters[0]),filters[0], 1)
+        #transform the outputs to models     
+        self.vp     =   nn.Conv2d(int(filters[0]),1,1)
+        self.vs     =   nn.Conv2d(int(filters[0]),1,1)
+        self.rho     =   nn.Conv2d(int(filters[0]),1,1)
+
+        # self.final   =  nn.Sigmoid()
+        
+    def forward(self, inputs1, inputs2, lstart, epoch1, latentI, lowf, inputs3, freq, idx, it):
+        filters = [64, 128, 256, 512]
+        # filters = [16,32,64,128]
+        # filters = [8,16,32, 64]
+        label_dsp_dim = (170,396)
+        lowf=lowf
+
+        minvp = torch.min(inputs1[:,0,:,:])
+        maxvp = torch.max(inputs1[:,0,:,:])
+        
+        minvs = torch.min(inputs1[:,1,:,:])
+        maxvs = torch.max(inputs1[:,1,:,:])
+        
+        minrho = torch.min(inputs1[:,2,:,:])
+        maxrho = torch.max(inputs1[:,2,:,:])
+
+        # print ("minvp =",minvp)
+        
+        #we need to know the scale of the numbers in searching for potential causes for the instabilities in the kl-divergence that is blowing up early during reconstruction
+        combine1 = self.combine1((inputs2[:,:,1:3000:3,:]))
+        combine2 = self.combine2((inputs3[:,:,1:3000:3,:]))
+
+        seis=[inputs2[:,:,1:3000:3,:]]
+
+        c1c2 = torch.cat((combine1,combine2),axis=1)
+
+        down1  = self.down1(c1c2)
+        down2  = self.down2(down1)
+        down3  = self.down3(down2)
+        down4  = self.down4(down3)
+        # print("down4",down4)
+        result = torch.flatten(down4, start_dim=1)
+        # print("result shape =",result.shape)
+        #compute mu,logvar for vs-vp
+        mu_vsp = self.smu_vsp(result)
+        log_var_vsp = self.svar_vsp(result)
+        print("mu_vsp",mu_vsp)
+        print("log_var_vsp",log_var_vsp)
+        zvsp = self.reparameterize(mu_vsp, log_var_vsp)
+        # print("zvsp",zvsp)
+        # print("zvsp shape =",zvsp.shape)
+        
+        #compute mu,logvar for rho
+        # mu_rho = self.smu_rho(result)
+        # log_var_rho = self.svar_rho(result)
+        # zrho = self.reparameterize(mu_rho, log_var_rho)
+        # print("zvsp",zvsp)
+        # print("zrho",zrho)
+        # print("zrho shape =",zrho.shape)
+        
+        z_vsp = self.decoder_vsp(zvsp)
+        # z_rho = self.decoder_vsp(zrho)
+        z_vsp = z_vsp.view(-1, filters[3], 23, 63)
+        # z_rho = z_rho.view(-1,filters[3],23,63)
+
+        # print("z_vsp",z_vsp)
+        # print("z_rho",z_rho)
+    
+        up31    = self.up31(z_vsp)
+        up32    = self.up32(z_vsp)
+
+        up33    = self.up33(z_vsp) #Abdo, this is only used for rho?
+
+        up21    = self.up21(up31)
+        up22    = self.up22(up32)
+        up23    = self.up23(up33)
+
+        up11    = self.up11(up21)
+        up12    = self.up12(up22)
+        up13    = self.up13(up23)
+
+        # print ("up11",up11)
+        # print ("up12",up12)
+        # print ("up13",up13)
+        # print ("shape of up11",up11.shape)
+        # print ("shape of up12",up12.shape)
+        up11    = up11[:,:,0:1+label_dsp_dim[0],1:1+label_dsp_dim[1]].contiguous()
+        up12    = up12[:,:,0:1+label_dsp_dim[0],1:1+label_dsp_dim[1]].contiguous()
+        up13    = up13[:,:,0:1+label_dsp_dim[0],1:1+label_dsp_dim[1]].contiguous()
+        
+        f11     = self.f11(up11)
+        f12     = self.f12(up12)
+        f13     = self.f13(up13)
+
+        # print ("f11",f11)
+        # print ("f12",f12)
+        # print ("f13",f13)
+
+        vp1f     = self.vp(f11)
+        vs1f     = self.vs(f12)
+        rho1f    = self.rho(f13)
+
+        # print ("vp1f",vp1f)
+        # print ("vs1f",vs1f)
+        # print ("rho1f",rho1f)
+
+        # dind = rho1f*0.0
+
+        # for i in range(396):
+        #     dind[0,0,:,i] = torch.arange(170)
+
+        vp1    = torch.unsqueeze(lowf[:,0,:,:],1) + vp1f
+        vs1    = torch.unsqueeze(lowf[:,1,:,:],1) + vs1f
+        rho1   = torch.unsqueeze(lowf[:,2,:,:],1) + rho1f
+        truevp,truevs,truerho=torch.unsqueeze(inputs1[:,0,:,:],1),torch.unsqueeze(inputs1[:,1,:,:],1),torch.unsqueeze(inputs1[:,2,:,:],1)
+
+        # fp1=self.final(f11)
+        # fs1=self.final(f12)
+        # vp1=minvp+fp1*(maxvp-minvp)
+        # vs1=minvs+fs1*(maxvs-minvs)
+        # vs1=truevs
+        # rho1=truerho
+        # print ("vp1",vp1)
+        # print ("vs1",vs1)
+        # print ("rho1",rho1)    
+        vp1    = torch.clip(vp1, min=minvp, max=maxvp)
+        vs1    = torch.clip(vs1, min=minvs, max=maxvs)
+        rho1   = torch.clip(rho1, min=minrho, max=maxrho)
+
+        # print ("vp1",vp1)
+        # print ("vs1",vs1)
+        # print ("rho1",rho1)
+
+        vp1[(truevp==minvp)] = minvp
+        vs1[(truevs==minvs)] = minvs
+        rho1 [(truerho==minrho)] = minrho
+
+        # print ("vp1",vp1)
+        # print ("vs1",vs1)
+        # print ("rho1",rho1)
+        latent1 = 0
+        grad = 0*vp1
+        lossT = 0.0
+        vp_grad = vp1*0
+        vs_grad = vp1*0
+        rho_grad = vp1*0
+        
+        print(epoch1,lstart)
+        if (epoch1 > lstart):
+            [vp_grad, vs_grad, rho_grad, lossT] = self.prop(vp1, vs1, rho1, inputs1, epoch1, freq, idx, it)
+
+
+        return vp1, vs1, rho1, grad, latent1, vp_grad, vs_grad, rho_grad, lossT,mu_vsp,log_var_vsp
+    
+    def reparameterize(self, mu, logvar):
+        """
+        Reparameterization trick to sample from N(mu, var) from
+        N(0,1).
+        :param mu: (Tensor) Mean of the latent Gaussian [B x D]
+        :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
+        :return: (Tensor) [B x D]
+        """
+        std = torch.exp(0.5 * logvar) #we do it this way to make sure that the standard deviation is always positive.
+        eps = torch.randn_like(std) #draw random variable between -1 and 1 (mu=0,and sigma=1)
+        # print("std",std)
+        # print("eps",eps)
+        # print("mu",mu)
+        return eps * std  + mu
+    # Initialization of Parameters
+    def  _initialize_weights(self):
+          for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m,nn.ConvTranspose2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+    
+    # forward modeling to compute gradients
+    #note that we do not pass the data here, instead we pass the data in su fomat to denise to compute the misfit and the gradient
+    def prop(self, vp1, vs1, rho1, true, epoch1, freq, idx, it):
+        # print("I just entered prop function")
+        dx = 20.0
+        vp = true[:,0,:,:].cpu().detach().numpy()
+        vs = true[:,1,:,:].cpu().detach().numpy()
+        rho = true[:,2,:,:].cpu().detach().numpy()
+
+        vp = np.squeeze(vp)
+        vs = np.squeeze(vs)
+        rho = np.squeeze(rho)
+        
+        vpst = vp1.cpu().detach().numpy()
+        vsst = vs1.cpu().detach().numpy()
+        rhost = rho1.cpu().detach().numpy()
+
+        vpst = np.squeeze(np.squeeze(vpst))
+        vsst = np.squeeze(np.squeeze(vsst))
+        rhost = np.squeeze(np.squeeze(rhost))
+        
+        denise_root = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/DENISE-Black-Edition/'
+        d = api.Denise(denise_root,verbose=0)
+        d.save_folder = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/'
+        d.set_paths()
+        
+        # Receivers
+        drec = 20.   #simple_model
+        depth_rec = 460.  # receiver depth [m]
+        xrec1 = 400.      # 1st receiver position [m]
+        xrec2 = 7700.     # last receiver position [m]
+        xrec = np.arange(xrec1, xrec2 + dx, drec)
+        yrec = depth_rec * (xrec / xrec)
+
+        # Sources
+        dsrc = 160. # source spacing [m]
+        depth_src = 40.  # source depth [m]
+        xsrc1 = 400.  # 1st source position [m]
+        xsrc2 = 7700.  # last source position [m] (Abd0:: why not 7780?)
+        xsrcoriginal = np.arange(xsrc1, xsrc2 + dx, dsrc)
+        #select the minibatch size
+        xsrc = xsrcoriginal[idx[0:8]]
+        # xsrc = xsrcoriginal
+        ysrc = depth_src * xsrc / xsrc
+        tshots = len(xsrc)
+        # fsource = 8.0
+        rec = api.Receivers(xrec, yrec)
+        src = api.Sources(xsrc, ysrc)
+
+        os.system('rm -rf /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/')
+        os.system('mkdir /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/')
+         
+        def copyshot(id1, value): 
+            #copy the shot to the data directory          
+            fo = 'cp /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su/seis_x.su.shot'+str(id1+1)+ ' ' + '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/.'
+            os.system(fo)
+            fo = 'cp /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su/seis_y.su.shot'+str(id1+1)+ ' ' + '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/.'
+            os.system(fo)
+        #      #if (id1+1 != value+1):
+            #rename in-place the shot files - but why!
+            fo = 'mv /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seis_x.su.shot'+str(id1+1)+' ' + '//disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seisT_x.su.shot' + str(value+1)
+            os.system(fo)
+            fo = 'mv /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seis_y.su.shot'+str(id1+1)+' ' + '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seisT_y.su.shot' + str(value+1)
+            os.system(fo)
+
+        for i in range(0,tshots):
+            print("idx :", idx[i])
+            copyshot(idx[i],i)
+        d.DATA_DIR = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seisT'
+        d.SEIS_FILE_VX = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seisT_x.su'
+        d.SEIS_FILE_VY = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seisT_y.su'
+        print(f'Target data: {d.DATA_DIR}')
+        #Abdo
+        os.system('rm -rf /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/taper/')
+        os.system('mkdir /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/taper/')
+        d.TFILE = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/taper/'
+
+        d.ITERMAX = 1
+        d.verbose = 0 #what does this mean?
+        d.TIME = 6.0
+        d.NPROCX = 6
+        d.NPROCY = 5
+        d.PHYSICS = 1
+        d.FC_SPIKE_1 = 4.0
+        d.FC_SPIKE_2 = 15.0
+        #check those numbers in order to constraint the optimization properly
+        d.VPUPPERLIM = 4767.0
+        d.VPLOWERLIM = 1500.0
+        d.VSUPPERLIM = 2752.0
+        d.VSLOWERLIM = 0.0
+        d.RHOUPPERLIM = 2627
+        d.RHOLOWERLIM = 1009.00
+        d.SWS_TAPER_GRAD_HOR = 1
+        d.QUELLART = 6
+
+        # filen = './AutoElMarmousi1/vptrue' + str(epoch1) + '.npy' #switch on for physics based fwi         
+        # np.save(filen, vp)  #switch on physics based fwi
+        # filen = './AutoElMarmousi3/vpmod' + str(epoch1) + '.npy' #switch on for physics based fwi         
+        # np.save(filen, vpst)  #switch on physics based fwi
+        
+        # filen = './AutoElMarmousi3/vsmod' + str(epoch1) + '.npy' #switch on for physics based fwi     
+        # np.save(filen, vsst)  #switch on physics based fwi
+        
+        # filen = './AutoElMarmousi3/rhomod' + str(epoch1) + '.npy' #switch on for physics based fwi     
+        # np.save(filen, rhost)  #switch on physics based fwi
+
+        # print ("vpst",vpst)
+        # print ("vsst",vsst)
+        # print ("rhost",rhost)
+        model_init = api.Model(vpst, vsst, rhost, dx)
+        d.fwi_stages = []
+
+        d.add_fwi_stage(fc_low=0.0,fc_high=6,lnorm=2) #using lower frequency may help.
+        #Abdo:: apply stages idea to reduce the nonlinearity of the FWI
+        # d.fwi_stages = []
+        # for i, freq in enumerate([2, 5, 10]):
+        #     d.add_fwi_stage(fc_low=0.0, fc_high=freq)
+        #     print(f'Stage {i+1}:\n\t{d.fwi_stages[i]}\n')
+
+        os.system('rm -rf /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/seis_fwi_log.dat')
+        
+        d.fwi(model_init, src, rec,run_command='mpirun -np 30')
+        #read the misfit value
+        loss = np.loadtxt('/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/seis_fwi_log.dat')
+        # loss=loss[2,4]
+        loss=loss[4]
+        #get the gradients
+        grads, fnames = d.get_fwi_gradients(return_filenames=True)
+        #Are you sure about these indices of gradients are correct?
+        vp_grad = np.array(grads[0])
+        vs_grad = np.array(grads[2])
+        rho_grad = np.array(grads[1])
+
+        # #apply some scaling to the gradients
+        g1 = np.arange(np.shape(rho_grad)[0])
+        g1 = g1**2.0
+        ss = rho_grad*0
+        for i in range(np.shape(rho_grad)[1]):
+             ss[:,i] = g1 
+        rho_grad = rho_grad*ss
+    
+        r1 = np.max(np.abs(vpst))/np.max(np.abs(vp_grad))
+        vp_grad = torch.from_numpy(vp_grad.copy())
+        vp_grad = vp_grad.float()
+        vp_grad = 1.0*vp_grad*r1
+
+        r2 = np.max(np.abs(vsst))/np.max(np.abs(vs_grad))
+        vs_grad = torch.from_numpy(vs_grad.copy())
+        vs_grad = vs_grad.float()  
+        vs_grad = 1.0*vs_grad*r2
+        
+        r3 = np.max(np.abs(rhost))/np.max(np.abs(rho_grad))
+        rho_grad = torch.from_numpy(rho_grad.copy())
+        rho_grad = rho_grad.float()
+        rho_grad = 0.5*rho_grad*r3
+        # rho_grad = (rho_grad + 1e-10)
+
+        #make the water layer has zero gradients - do not update that layers
+        vp_grad[(vp==np.min(vp))] = 0
+        vs_grad[(vs==np.min(vs))] = 0
+        rho_grad [(rho==np.min(rho))] = 0
+        
+        # filen = './AutoElMarmousi3/vpg' + str(epoch1) + '.npy' #switch on for physics based fwi       
+        # np.save(filen, vp_grad)  #switch on physics based fwi
+        # filen = './AutoElMarmousi3/vsg' + str(epoch1) + '.npy' #switch on for physics based fwi       
+        # np.save(filen, vs_grad)  #switch on physics based fwi
+        # filen = './AutoElMarmousi3/rhog' + str(epoch1) + '.npy' #switch on for physics based fwi       
+        # np.save(filen, rho_grad)  #switch on physics based fwi
+
+        return vp_grad, vs_grad, rho_grad, loss
 
 
 
@@ -10254,115 +12873,52 @@ class AutoElFullRhoMarmousiMar22_Net(nn.Module):
         self.in_channels   = outer_nc
         self.is_batchnorm  = True
         self.n_classes     = 1
-        
-        #filters = [16, 32, 64, 128, 256]
-        filters = [32, 64, 128, 256, 512]
-        #filters = [16, 32, 64, 128, 512]
-        #######filters = [2, 4, 8, 16, 32] #this works best result so far for marmousi model
-        #filters = [1, 1, 2, 4, 16]
-        #filters = [8, 16, 32, 64, 128] 
-        ##filters = [4,8,16,32,64]
-        #filters = [4, 8, 16, 32, 64]
-        #filters = [16, 32, 64, 128, 256]
-        #########filters = [2, 4, 8, 16, 32]
-        #filters = [32, 64, 128, 256, 512]
-        
+        filters = [32, 64, 128, 256]
+        # filters = [8,16,32, 64]
         latent_dim = 8
+        #combine the two component of the wavefield
         self.combine1 = nn.Conv2d(self.in_channels, 1, 3, 1, 1)
         self.combine2 = nn.Conv2d(self.in_channels, 1, 3, 1, 1)
-        
+        #start the encoder
         self.down1   = unetDown(2, filters[0], self.is_batchnorm)
-        #self.dropD1   = nn.Dropout2d(0.025)
         self.down2   = unetDown(filters[0], filters[1], self.is_batchnorm)
-        #self.dropD2   = nn.Dropout2d(0.025)
         self.down3   = unetDown(filters[1], filters[2], self.is_batchnorm)
-        #self.dropD3   = nn.Dropout2d(0.025)
         self.down4   = unetDown(filters[2], filters[3], self.is_batchnorm)
-        #self.dropD4  = nn.Dropout2d(0.025)
-        # self.center  = unetConv2(filters[3], filters[4], self.is_batchnorm)
-        ##self.decoder_input1 = nn.Linear(filters[1]*250*51, latent_dim) #for marmousi 151x200
-        #self.decoder_input1 = nn.Linear(filters[2]*125*26, latent_dim) #for marmousi 151x200
-        #self.decoder_input = nn.Linear(latent_dim, filters[2]*500*102) #for marmousi 151x200
-        self.decoder_input1 = nn.Linear(filters[3]*63*24, 8) #for marmousi 101x101
-        self.decoder_input2 = nn.Linear(filters[3]*63*24, 8)
-        #self.decoder_input = nn.Linear(latent_dim, filters[3]*100*26) #for marmousi 101x101
-        #self.decoder_input1 = nn.Linear(filters[1]*100*18, latent_dim) #for marmousi 101x101
-        self.decoder_input3 = nn.Linear(8, filters[3]*52*23) #for marmousi 101x101
-        self.decoder_input4 = nn.Linear(8, filters[3]*52*23)
-        #############self.decoder_input2 = nn.Linear(latent_dim, 4*92*208)
-        #self.decoder_inputRho = nn.Linear(latent_dim, 1*300*100)
-
-
-        #self.up41    = autoUp5(filters[4], filters[3], self.is_deconv)
-        ##self.up42    = autoUp5(filters[4], filters[3], self.is_deconv)
-        
-        
-        #self.up4     = autoUp(filters[4], filters[3], self.is_deconv)
+        #split the network to two latent vectors, one for vs and vp, and the other for rho
+        self.decoder_input1 = nn.Linear(filters[3]*63*23, latent_dim) #for marmousi 101x101
+        self.decoder_input2 = nn.Linear(filters[3]*63*23, latent_dim)
+        #now start preparing the latent vectors for decoding
+        self.decoder_input3 = nn.Linear(latent_dim, filters[3]*63*23) #for marmousi 101x101
+        self.decoder_input4 = nn.Linear(latent_dim, filters[3]*63*23)
+        # start the decoder 
+        #in the decoder, we will have different decoder network for each model (distinict 1 for vp, vs, and rho)
+        #vp decoder
         self.up31     = autoUp5(filters[3], filters[2], self.is_deconv)
-        #self.drop31   = nn.Dropout2d(0.1)
-        self.up32     = autoUp5(int(filters[3]), int(filters[2]), self.is_deconv)
-        #self.drop32   = nn.Dropout2d(0.1)
-        self.up33     = autoUp5(int(filters[3]), int(filters[2]/2), True)
-        #self.Rhoup33  = autoUp5(filters[3], int(filters[2]/4), self.is_deconv)
-        #self.drop33   = nn.Dropout2d(0.1)
-        #self.up3     = autoUp5(filters[3], filters[2], self.is_deconv)
-        #self.dropU3  = nn.Dropout2d(0.025)
         self.up21     = autoUp5(filters[2], filters[1], self.is_deconv)
-        #self.drop21   = nn.Dropout2d(0.1)
-        self.up22     = autoUp5(int(filters[2]), int(filters[1]), self.is_deconv)
-        #self.drop22   = nn.Dropout2d(0.1)
-        self.up23     = autoUp5(int(filters[2]/2), int(filters[1]/2), self.is_deconv)
-        #self.Rhoup23  = autoUp5(int(filters[2]/4), int(filters[1]/4), self.is_deconv)
-        #self.drop23   = nn.Dropout2d(0.1)
-        #self.up2     = autoUp5(filters[2], filters[1], self.is_deconv)
-        #self.dropU2  = nn.Dropout2d(0.025)
         self.up11     = autoUp5(filters[1], filters[0], self.is_deconv)
-        #self.drop11   = nn.Dropout2d(0.1)
+        #vs decoder
+        self.up32     = autoUp5(int(filters[3]), int(filters[2]), self.is_deconv)
+        self.up22     = autoUp5(int(filters[2]), int(filters[1]), self.is_deconv)
         self.up12     = autoUp5(int(filters[1]), int(filters[0]), self.is_deconv)
-        #self.drop12   = nn.Dropout2d(0.1)
-        self.up13     = autoUp5(int(filters[1]/2), int(filters[0]/2), self.is_deconv)
-        #self.Rhoup13  = autoUp5(int(filters[1]/4), int(filters[0]/4), self.is_deconv)
-        #self.drop13   = nn.Dropout2d(0.1)
-        #self.up1     = autoUp5(filters[1], filters[0], self.is_deconv)
-        #self.dropU1  = nn.Dropout2d(0.025)
-        ###self.upff1     = autoUp(filters[0], filters[0], self.is_deconv)
-        ##self.upff2     = autoUp(filters[0], filters[0], self.is_deconv)
-        #######self.f1      =  nn.Conv2d(filters[0],self.n_classes, 1)
-        self.f11      =  nn.Conv2d(filters[0],int(filters[0]/2), 1)
-        self.f12      =  nn.Conv2d(int(filters[0]),int(filters[0]/2), 1)
-        self.f13      =  nn.Conv2d(int(filters[0]/2),int(filters[0]/2), 1)
-        #self.Rhof13      =  nn.Conv2d(int(filters[0]/4), int(filters[0]/8), 1)
-        
-        self.vp     =   nn.Conv2d(int(filters[0]/2),1,1)
-        self.vs     =   nn.Conv2d(int(filters[0]/2),1,1)
-        self.rho     =   nn.Conv2d(int(filters[0]/2),1,1)
-        #self.Rhorho    =   nn.Conv2d(int(filters[0]/8), 1, 1)
-        
-        #self.final1   = nn.LeakyReLU(0.1)
-        #self.final2   = nn.LeakyReLU(0.1)
-        #######4############# self.final1     =   nn.Tanh()
-        #####4############### self.final2     =   nn.Tanh()
-        #######4############ self.final3     =   nn.Tanh()
-        ##########self.final3     =   nn.Tanh()
-        #self.f2      =  nn.Conv2d(1,1,1)
-        #self.final1   =  nn.Sigmoid()
-        #self.final1  =  nn.Conv2d(1, 1, 1)
-        ###4############ self.final1 = nn.Sigmoid()
-        ####4########### self.final2 = nn.Sigmoid()
-        ####4########### self.final3 = nn.Sigmoid()
+        #rho decoder
+        self.up33     = autoUp5(int(filters[3]), int(filters[2]), self.is_deconv)
+        self.up23     = autoUp5(int(filters[2]), int(filters[1]), self.is_deconv)
+        self.up13     = autoUp5(int(filters[1]), int(filters[0]), self.is_deconv)
+        #transform the outputs to models
+        self.f11      =  nn.Conv2d(filters[0],int(filters[0]), 1)
+        self.f12      =  nn.Conv2d(int(filters[0]),int(filters[0]), 1)
+        self.f13      =  nn.Conv2d(int(filters[0]),int(filters[0]), 1)
+        #transform the outputs to models     
+        self.vp     =   nn.Conv2d(int(filters[0]),1,1)
+        self.vs     =   nn.Conv2d(int(filters[0]),1,1)
+        self.rho     =   nn.Conv2d(int(filters[0]),1,1)
         
     def forward(self, inputs1, inputs2, lstart, epoch1, latentI, lowf, inputs3, freq, idx, it):
-        #filters = [16, 32, 64, 128, 256]
-        #filters = [2, 4, 8, 16, 32]
-        filters = [32, 64, 128, 256, 512]
-        #filters = [4,8,16,32,64]
-        ###filters = [8, 16, 32, 64, 128]  ###this works very well
-        #filters = [1, 1, 2, 4, 16]
-        #filters = [16, 32, 64, 128, 256]
-        #filters = [4, 8, 16, 32, 64]
-        latent_dim = 8
+        filters = [32, 64, 128, 256]
+        # filters = [8,16,32, 64]
         label_dsp_dim = (170,396)
-        #label_dsp_dim = (40,90)
+        lowf=lowf
+
         minvp = torch.min(inputs1[:,0,:,:])
         maxvp = torch.max(inputs1[:,0,:,:])
         
@@ -10371,237 +12927,75 @@ class AutoElFullRhoMarmousiMar22_Net(nn.Module):
         
         minrho = torch.min(inputs1[:,2,:,:])
         maxrho = torch.max(inputs1[:,2,:,:])
-        
-        #print("minrho :", minrho)
-        #print("maxrho :", maxrho)
-        
-        #meandata2 = torch.mean(inputs2)
-        #stddata2 = torch.std(inputs2)
-        #inputs2 = (inputs2-meandata2)/stddata2
-        #inputs2 = torch.flip(inputs2,dims=[2])
-        #inputs3 = torch.flip(inputs3,dims=[2])
 
-        #meandata3 = torch.mean(inputs3)
-        #stddata3 = torch.std(inputs3)
-        #inputs3 = (inputs3-meandata3)/stddata3
-        ############################################################
         combine1 = self.combine1((inputs2[:,:,1:3000:3,:]))
         combine2 = self.combine2((inputs3[:,:,1:3000:3,:]))
-        
+        seis=[inputs2[:,:,1:3000:3,:]]
         c1c2 = torch.cat((combine1,combine2),axis=1)
-        
-        #############################print("shape of inputs2 :", np.shape(inputs2))
-        #############################print("shape of inputs1 :", np.shape(inputs1))
-        #down1  = self.down1((inputs2[:,:,1:1200:4,:]))
+
         down1  = self.down1(c1c2)
-        #down1  = self.dropD1(down1)
         down2  = self.down2(down1)
-        #down2  = self.dropD2(down2)
         down3  = self.down3(down2)
-        #down3  = self.dropD3(down3)
         down4  = self.down4(down3)
-        #down4  = self.dropD4(down4)
         
-        #print("shape of down4 :", np.shape(down4))
-        
-        print("shape of down4 :", np.shape(down4))
         result = torch.flatten(down4, start_dim=1)
-        
-        #####print("result shape :", np.shape(result))
+
         
         p = self.decoder_input1(result)
         p1 = self.decoder_input2(result)
-        ###################################################################
-        #p = inputs2
-        #down3  = self.down3(down2)
-        #down4  = self.down4(down3)s
-        #center = self.center(down4)
-        #up4    = self.up4(center)
-        #up3    = self.up3(up4)
-        #up2    = self.up2(up3)
-        #print("shape of down 4:", np.shape(down2))
-        #print("shape of result:", np.shape(result))
-        #print("shape of p :", np.shape(p))
+
         latent1 = p
-        
-        #if (epoch1 <= lstart):
-        #    latent1 = p
-        #else:
-        #    latent1 = latentI
-        #    p = latent1
-        #latent1 = p
-            
-        ########latent1 = p
-        #p = inputs2
-        #z = 0.5*torch.ones([1,1,1,64])
+
         z = self.decoder_input3(p)
         z1 = self.decoder_input4(p1)
-        ##############z2 = self.decoder_input2(p)
-        ####zrho = self.decoder_inputRho(p)
-        #####z = inputs2
-        #z = z.view(-1, filters[3], 250, 51) #for marmousi model
-        #print("shape of z :", np.shape(z))
-        z = z.view(-1, filters[3], 23, 52)
-        z1 = z1.view(-1,filters[3],23,52)
-        #z2 = z2.view(-1, 4, 92, 208)
-        #zrho = zrho.view(-1, 1, 100, 300)
-        #down4 = torch.swapaxes(down4,2,3)
+
+
+        z = z.view(-1, filters[3], 23, 63)
+        z1 = z1.view(-1,filters[3],23,63)
     
         up31    = self.up31(z)
-        #up31    = self.drop31(up31)
         up32    = self.up32(z)
-        #up32    = self.drop32(up32)
-        ####up33    = self.Rhoup33(z)
-        up33    = self.up33(z1)
-        ###print("shape off up33 :", np.shape(up33))
-        #up3      = self.up3(z)
-        
-        #up3    = self.dropU3(up3)
-        #print(" shape of up1 :", np.shape(up1))
+
+        up33    = self.up33(z1) #Abdo, this is only used for rho?
+
         up21    = self.up21(up31)
-        #up21    = self.drop21(up21)
         up22    = self.up22(up32)
-        #up22    = self.drop22(up22)
         up23    = self.up23(up33)
-        ###################print("shape of up23 :", np.shape(up23))
-        #up23    = self.drop23(up23)
-        #up2     = self.up2(up3)
-        
-        #up2    = self.dropU2(up2)
+
         up11    = self.up11(up21)
-        #up11    = self.drop11(up11)
-        #print("shape of up21 :", np.shape(up21))
         up12    = self.up12(up22)
-        #up12    = self.drop12(up12)
         up13    = self.up13(up23)
-        ##print("shape of up13 :", np.shape(up13))
-        #up13    = self.drop13(up13)
-        #up1     = self.up1(up2)
-        
-        
-        #up1    = self.dropU1(up1)
-        print("shape of up11 :", np.shape(up11))
-        print("shape of up12 :", np.shape(up12))
+
         up11    = up11[:,:,10:10+label_dsp_dim[0],10:10+label_dsp_dim[1]].contiguous()
         up12    = up12[:,:,10:10+label_dsp_dim[0],10:10+label_dsp_dim[1]].contiguous()
         up13    = up13[:,:,10:10+label_dsp_dim[0],10:10+label_dsp_dim[1]].contiguous()
         
-        ##print("shape of up13 :", np.shape(up13))
-        #up1    = up1[:,:,3:3+label_dsp_dim[0],3:3+label_dsp_dim[1]].contiguous()
-        
         f11     = self.f11(up11)
         f12     = self.f12(up12)
         f13     = self.f13(up13)
-        #f1    = self.f1(up1)
 
         vp1f     = self.vp(f11)
         vs1f     = self.vs(f12)
         rho1f    = self.rho(f13)
-        #rho1    = self.rho2(rho1)
-        #############################7######### vp1f     = 0.39423115*vp1f + 0.002671641
-        #############################7######### vs1f     = 0.22760948*vs1f + 0.0015424669
-        #############################7########## rho1f    = 10.381522*rho1f + 7.465008
-        ##########7#############   vp1f = 73.130*vp1f + 0.267
-        ########7#############     vs1f = 43.86*vs1f + 0.1542
-        ##########7############     rho1f = 15.447317*rho1f + 9.41e-06
-        ###vp1    = self.vp(torch.unsqueeze(f1[:,0,:,:],1))
-        ###vs1    = self.vs(torch.unsqueeze(f1[:,1,:,:],1))
-        #rho1   = self.rho(f13)
-        #vp1     = f11
-        #vs1     = f12
-        #rho1    = f13
-        
-        ############rho1   = self.final3(rho1)
-        #print("shape of vp1 :", np.shape(vp1))
-        #vp1[:,:,0:15,:] = 0
-        #vs1[:,:,0:15,:] = 0
-        #rho1[:,:,0:15,:] = 0
-        #rho1 = self.final3(rho1)
-        #vp1f     = self.final1(vp1f)
-        #vs1f     = self.final2(vs1f)
-        
 
-        #####vp1    = minvp + vp1f*(maxvp-minvp)
-        ####vs1    = 88.1 + vs1f*(maxvs-88.1)
-        ####rho1   = torch.unsqueeze(lowf[:,2,:,:],1)
-        #vs1 = 88.10 + vs1f*(maxvs - 88.10)
         dind = rho1f*0.0
-        print("shape of rho1f :", np.shape(rho1f))
+
         for i in range(396):
             dind[0,0,:,i] = torch.arange(170)
 
         vp1    = torch.unsqueeze(lowf[:,0,:,:],1) + vp1f
         vs1    = torch.unsqueeze(lowf[:,1,:,:],1) + vs1f
-        ##rem### rho1   = torch.unsqueeze(lowf[:,2,:,:],1) + 0.0020*(0.5*rho1f + 0.5*(0.17*vp1+168.4))
-        rho1   = torch.unsqueeze(lowf[:,2,:,:],1) + 0.002*(0.5*rho1f + 0.5*(0.17*vp1+168.4))
-
-        #################4################# print("before rho1 norm :", torch.norm(torch.unsqueeze(lowf[:,2,:,:],1)))
-        #rho1   = torch.unsqueeze(lowf[:,2,:,:],1) + 0.0005*rho1f
-        ###rho1 = torch.unsqueeze(lowf[:,2,:,:],1)
-        ##############4###################### print("after rho1 norm :", torch.norm(rho1))
-
-        
-        #########rho1   = torch.unsqueeze(lowf[:,2,:,:],1)
-
-        #rho1    = self.final3(rho1)
-        #vp1    = minvp + vp1*(maxvp-minvp)
-        #vs1    = minvs + vs1*(maxvs-881.0)
-        #rho1   = minrho + rho1*(maxrho-minrho)
-        #vp1  = minvp + vp1f*(maxvp-minvp)
-        #vs1  = minvs + vs1f*(maxvs-minvs)
-        ####maxrho1 = lowf[:,2,:,:]+0.2*lowf[0,2,:,:]
-        ####minrho1 = lowf[:,2,:,:]
+        rho1   = torch.unsqueeze(lowf[:,2,:,:],1) + 0.01*rho1f
+        truevp,truevs,truerho=torch.unsqueeze(inputs1[:,0,:,:],1),torch.unsqueeze(inputs1[:,1,:,:],1),torch.unsqueeze(inputs1[:,2,:,:],1)
 
         
         vp1    = torch.clip(vp1, min=minvp, max=maxvp)
-        vs1    = torch.clip(vs1, min=88.10, max=maxvs)
-        rho1   = torch.clip(rho1, min=195.9, max=maxrho)
-        #rho1   = torch.max(torch.min(rho1, maxrho1), minrho1)
-        #######vp1 = minvp + vp1*(maxvp-minvp)
-        ########vs1 = minvs + vs1*(maxvs-minvs)
-        ##########vs1 = 8.810*torch.ones((vs10.size())).cuda(vs10.get_device())
-        
-        
-        vp1[:,:,0:24,:] = inputs1[:,0,0:24,:]
-        vs1[:,:,0:24,:] = inputs1[:,1,0:24,:]
-        rho1[:,:,0:24,:] = inputs1[:,2,0:24,:]
-        
-        
-       #vp1     = inputs1[:,0,:,:]
-        #rho1     = inputs1[:,2,:,:]
-        
-        
-        #vp1    = torch.unsqueeze(vp1,1)
-        #vs1    = torch.unsqueeze(vs1,1)
-        #rho1   = torch.unsqueeze(rho1,1)
-        #f11    = torch.cat((vp1,vs1),dim=1)
-        #f11     = vp1
-        #f1     = self.final(f1)
-        #f1     = self.final1(f1)
-        #f1     = self.final(f1)
-        #f1     = f1/torch.max(f1)
-        #print("mintrue :", mintrue)
-        #print("maxtrue :", maxtrue)
-        
-        #f1    = mintrue + f1*(maxtrue-mintrue)
-        #f1[(inputs1==1500)] = 1500
-        #f1     = lowf + f1
-        #f1[(inputs1 == 1.510)] = 1.510
-        #f1     = torch.clamp(f1,min=mintrue,max=maxtrue)
-        #f1[(inputs1 == 1.510)] = 1.510
-        
-        #f1     = torch.add(f1,1600.0)
-        #f1     = torch.add(f1,lowf)
-        #f1     = 3.0 + f1*(6.0-3.0)
-        #f1     = torch.clamp(f1, min=mintrue, max=maxtrue)
-        #print("shape of f1 :", np.shape(f1))
-        #f1[(inputs1==2000)] = 2000
-        #f1     = f1*100
-        #f1     = torch.clip(f1, min=1500, max=3550) ##clamping for marmousi
-        #with torch.no_grad():
-        #    f4 = torch.clamp(f1,15.0, 35.5)  # You must use v[:]=xxx instead of v=xxx
-        #f1[:,:,0:26,:] = 1500.0
-        #f1     = torch.clamp(f1,min=20,max=45)
+        vs1    = torch.clip(vs1, min=minvs, max=maxvs)
+        rho1   = torch.clip(rho1, min=minrho, max=maxrho)
+
+        vp1[(truevp==minvp)] = minvp
+        vs1[(truevs==minvs)] = minvs
+        rho1 [(truerho==minrho)] = minrho
         latent1 = 0
         grad = 0*vp1
         lossT = 0.0
@@ -10609,17 +13003,10 @@ class AutoElFullRhoMarmousiMar22_Net(nn.Module):
         vs_grad = vp1*0
         rho_grad = vp1*0
         
-        #vs1 = vp1*0
-        #rho1 = vp1*0
+        print(epoch1,lstart)
         if (epoch1 > lstart):
             [vp_grad, vs_grad, rho_grad, lossT] = self.prop(vp1, vs1, rho1, inputs1, epoch1, freq, idx, it)
-        #if (epoch1 > lstart):
-        #    [grad, lossT] = self.prop(inputs2, f1, lstart, epoch1, mintrue, maxtrue, inputs1)
-        #    grad = grad.to(inputs2.get_device())
-        #    grad = torch.unsqueeze(grad,0)
-        #    grad = torch.unsqueeze(grad,0)
-        #result = torch.flatten(f1, start_dim=1)
-        #print(" shape of grad :", np.shape(grad))
+
 
         return vp1, vs1, rho1, grad, latent1, vp_grad, vs_grad, rho_grad, lossT
     
@@ -10640,34 +13027,18 @@ class AutoElFullRhoMarmousiMar22_Net(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
     
-    # forward modeling to compute gradients  
+    # forward modeling to compute gradients
+    #note that we do not pass the data here, instead we pass the data in su fomat to denise to compute the misfit and the gradient
     def prop(self, vp1, vs1, rho1, true, epoch1, freq, idx, it):
+        # print("I just entered prop function")
         dx = 20.0
         vp = true[:,0,:,:].cpu().detach().numpy()
         vs = true[:,1,:,:].cpu().detach().numpy()
         rho = true[:,2,:,:].cpu().detach().numpy()
-    
+
         vp = np.squeeze(vp)
         vs = np.squeeze(vs)
         rho = np.squeeze(rho)
-        
-        vp = np.flipud(vp)*10.0
-        vs = np.flipud(vs)*10.0
-        rho = np.flipud(rho)*10.0
-        
-        #vs = (2752 - 0) * (vs - 1500)/(4766 - 1500) + 0
-        #rho = (2627 - 1009) * (rho - 1500)/(4766 - 1500) + 1009
-        
-        vp0 = vp[-1,-1]*np.ones(np.shape(vp))
-        vs0 = vs[-1,-1]*np.ones(np.shape(vs))
-        rho0 = rho[-1,-1]*np.ones(np.shape(rho))
-        
-        vp = vp
-        vs = vs
-        rho = rho
-        
-        
-        #model = api.Model(vp, vs, rho, dx)
         
         vpst = vp1.cpu().detach().numpy()
         vsst = vs1.cpu().detach().numpy()
@@ -10677,290 +13048,150 @@ class AutoElFullRhoMarmousiMar22_Net(nn.Module):
         vsst = np.squeeze(np.squeeze(vsst))
         rhost = np.squeeze(np.squeeze(rhost))
         
-        vpst = np.flipud(vpst)
-        vsst = np.flipud(vsst)
-        rhost = np.flipud(rhost)
-        
-        vpst = vpst*10.0
-        vsst = vsst*10.0
-        rhost = rhost*10.0
-        
-               
-        print("max of vp passed :", np.max(vp), np.max(vs), np.max(rho))
-        #model = api.Model(vp, vs, rho, dx)
-        
-        
-        denise_root = '/disk/student/adhara/WORK/DeniseFWI/virginFWI/DENISE-Black-Edition/'
-        d = api.Denise(denise_root,verbose=1)
-        d.save_folder = '/disk/student/adhara/MARMOUSILinConst/'
+        denise_root = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/DENISE-Black-Edition/'
+        d = api.Denise(denise_root,verbose=0)
+        d.save_folder = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/'
         d.set_paths()
-        
-        #model = api.Model(vp, vs, rho, dx)
-        #print(model)
         
         # Receivers
         drec = 20.   #simple_model
         depth_rec = 460.  # receiver depth [m]
-        ######depth_rec = 80. #simple_model
         xrec1 = 400.      # 1st receiver position [m]
-        ######xrec1 = 100.
-        xrec2 = 7780.     # last receiver position [m]
-        #####xrec2 = 1700.
+        xrec2 = 7700.     # last receiver position [m]
         xrec = np.arange(xrec1, xrec2 + dx, drec)
         yrec = depth_rec * (xrec / xrec)
 
         # Sources
         dsrc = 160. # source spacing [m]
-        #######dsrc = 120.
         depth_src = 40.  # source depth [m]
-        #######depth_src = 40.
         xsrc1 = 400.  # 1st source position [m]
-        ######xsrc1 = 100.
-        xsrc2 = 7700.  # last source position [m]
-        #######xsrc2 = 1700.
+        xsrc2 = 7700.  # last source position [m] (Abd0:: why not 7780?)
         xsrcoriginal = np.arange(xsrc1, xsrc2 + dx, dsrc)
-        #print("xsrcoriginal :", xsrcoriginal)
-        #xsrcoriginal = xsrcoriginal[idx]
-        #print("xsrcoriginal sorted :", xsrcoriginal)
-        #lens = len(xsrcoriginal)
-        
-        # r = random.randint(1,2)
-        # if (r==1):
-        #     xsrc = xsrcoriginal[0:len(xsrcoriginal):2]
-        #     idx = np.arange(0, len(xsrcoriginal), 2)
-        # else:
-        #     xsrc = xsrcoriginal[1:len(xsrcoriginal):2]
-        #     idx = np.arange(1, len(xsrcoriginal), 2)
-        #print("xsrcoriginal :",xsrcoriginal)
-        #idx = np.random.permutation(len(xsrcoriginal))
-        #xsrc = xsrcoriginal[idx]
-        #tshots = 8
-        ###xsrc = xsrcoriginal[idx[it::1]]
-        ############################xsrc = xsrcoriginal[idx[0:14]]
-        xsrc = xsrcoriginal[idx[0:6]]
-        #xsrc = xsrcoriginal
-        #print("xsrc1 :", xsrc)
-        #xsrc = np.sort(xsrc)
-        #print("xsrc2 :", xsrc)
-        #idx = idx[it::3]
-        ###idx = np.sort(idx[it::1])
-        #print("idx :", idx)
+        #select the minibatch size
+        xsrc = xsrcoriginal[idx[0:8]]
+        # xsrc = xsrcoriginal
         ysrc = depth_src * xsrc / xsrc
         tshots = len(xsrc)
-        # print("xsrc :",xsrc)
-
-
-        # Wrap into api
-        fsource = 10.0
+        # fsource = 8.0
         rec = api.Receivers(xrec, yrec)
-        src = api.Sources(xsrc, ysrc, fsource)
-        
-        
-        os.system('rm -rf /disk/student/adhara/MARMOUSILinConst/su1')
-        os.system('mkdir /disk/student/adhara/MARMOUSILinConst/su1')
-        def copyshot(id1, value):             
-            fo = 'cp /disk/student/adhara/MARMOUSILinConst/su/seis_x.su.shot'+str(id1+1)+ ' ' + '/disk/student/adhara/MARMOUSILinConst/su1/.'
+        src = api.Sources(xsrc, ysrc)
+
+        os.system('rm -rf /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/')
+        os.system('mkdir /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/')
+         
+        def copyshot(id1, value): 
+            #copy the shot to the data directory          
+            fo = 'cp /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su/seis_x.su.shot'+str(id1+1)+ ' ' + '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/.'
             os.system(fo)
-            fo = 'cp /disk/student/adhara/MARMOUSILinConst/su/seis_y.su.shot'+str(id1+1)+ ' ' + '/disk/student/adhara/MARMOUSILinConst/su1/.'
+            fo = 'cp /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su/seis_y.su.shot'+str(id1+1)+ ' ' + '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/.'
             os.system(fo)
         #      #if (id1+1 != value+1):
-            fo = 'mv /disk/student/adhara/MARMOUSILinConst/su1/seis_x.su.shot'+str(id1+1)+' ' + '/disk/student/adhara/MARMOUSILinConst/su1/seisT_x.su.shot' + str(value+1)
+            #rename in-place the shot files - but why!
+            fo = 'mv /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seis_x.su.shot'+str(id1+1)+' ' + '//disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seisT_x.su.shot' + str(value+1)
             os.system(fo)
-            fo = 'mv /disk/student/adhara/MARMOUSILinConst/su1/seis_y.su.shot'+str(id1+1)+' ' + '/disk/student/adhara/MARMOUSILinConst/su1/seisT_y.su.shot' + str(value+1)
+            fo = 'mv /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seis_y.su.shot'+str(id1+1)+' ' + '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seisT_y.su.shot' + str(value+1)
             os.system(fo)
-        # # #pool = ThreadPool(tshots)
-        #values = np.arange(0,tshots)
-        #print("values :", values)
-        # # #print("idx :", idx)
-        # # #pool.starmap(copyshot, zip(idx,values))
-        #######################################################
+
         for i in range(0,tshots):
             print("idx :", idx[i])
             copyshot(idx[i],i)
-        d.DATA_DIR = '/disk/student/adhara/MARMOUSILinConst/su1/seisT'
-        d.SEIS_FILE_VX = 'su1/seisT_x.su'
-        d.SEIS_FILE_VY = 'su1/seisT_y.su'
+        d.DATA_DIR = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seisT'
+        d.SEIS_FILE_VX = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seisT_x.su'
+        d.SEIS_FILE_VY = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/su1/seisT_y.su'
+        print(f'Target data: {d.DATA_DIR}')
+        #Abdo
+        os.system('rm -rf /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/taper/')
+        os.system('mkdir /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/taper/')
+        d.TFILE = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/taper/'
 
-        d.help()
-        #d.NX = 300
-        #d.NY = 150
-        #d.DH = 20.0
         d.ITERMAX = 1
-        d.verbose = 0
+        d.verbose = 0 #what does this mean?
         d.TIME = 6.0
-        print("shape of vp :", np.shape(vp))
-        print("shape of vs :", np.shape(vs))
-        print("shape of rho :", np.shape(rho))
-        print("shape of xsrc :", np.shape(xsrc))
-        
-
-        print(f'NSRC:\t{len(src)}')
-        print(f'NREC:\t{len(rec)}')
         d.NPROCX = 6
         d.NPROCY = 5
         d.PHYSICS = 1
         d.FC_SPIKE_1 = 4.0
         d.FC_SPIKE_2 = 15.0
-        ###################d.QUELLART = 1
-        #d.FC_SPIKE_2 = 18.0
-        #d.TIME = 6.0
-        #d.NT = 2.5e-03
-        #d.VPUPPERLIM = 3000.0
-        #d.VPLOWERLIM = 1500.0
-        #d.VSUPPERLIM = 1732.0
-        #d.VSLOWERLIM = 866.0
-        #d.RHOUPPERLIM = 2294.0
-        #d.RHOLOWERLIM = 1929.0
-        
+        #check those numbers in order to constraint the optimization properly
         d.VPUPPERLIM = 4767.0
         d.VPLOWERLIM = 1500.0
         d.VSUPPERLIM = 2752.0
         d.VSLOWERLIM = 0.0
-        #d.RHOUPPERLIM = 2589.0
-        #d.RHOLOWERLIM = 1009.0
-        d.RHOUPPERLIM = 3152.3999
+        d.RHOUPPERLIM = 2627
         d.RHOLOWERLIM = 1009.00
         d.SWS_TAPER_GRAD_HOR = 1
-        #d.FC_SPIKE_1 = 0.0
         d.QUELLART = 6
-        #d.EXP_TAPER_GRAD_HOR = 1.0
-        #d.forward(model, src, rec)
-        #os.system('mpirun -np 4 hello')
-        filen = './marmousiEl19Mar2/vpmod' + str(epoch1) + '.npy' #switch on for physics based fwi         
+
+        # filen = './AutoElMarmousi1/vptrue' + str(epoch1) + '.npy' #switch on for physics based fwi         
+        # np.save(filen, vp)  #switch on physics based fwi
+        filen = './AutoElMarmousi3/vpmod' + str(epoch1) + '.npy' #switch on for physics based fwi         
         np.save(filen, vpst)  #switch on physics based fwi
         
-        filen = './marmousiEl19Mar2/vsmod' + str(epoch1) + '.npy' #switch on for physics based fwi     
+        filen = './AutoElMarmousi3/vsmod' + str(epoch1) + '.npy' #switch on for physics based fwi     
         np.save(filen, vsst)  #switch on physics based fwi
         
-        filen = './marmousiEl19Mar2/rhomod' + str(epoch1) + '.npy' #switch on for physics based fwi     
+        filen = './AutoElMarmousi3/rhomod' + str(epoch1) + '.npy' #switch on for physics based fwi     
         np.save(filen, rhost)  #switch on physics based fwi
-        
-        
-        #d.NT = 1200
-        #d.JACOBIAN = 'sacobian/jacobian_Test'
-        print("min max vpst :", np.min(vpst), np.max(vpst))
-        print("min max vsst :", np.min(vsst), np.max(vsst))
-        print("min max rhost :", np.min(rho0), np.max(rho0))
-        
-        #model_init = api.Model0(vpst, vsst, rhost, vp0, vs0, rho0, dx)
         model_init = api.Model(vpst, vsst, rhost, dx)
-        
-        
         d.fwi_stages = []
-        #d.add_fwi_stage(fc_low=0.0, fc_high=20.0)
-        #d.add_fwi_stage(fc_low=0.0, fc_high=20.0)
-        #for i, freq in enumerate([20]
-        #d.add_fwi_stage(fc_low=0.0, fc_high=int(epoch1/10)+1.0)
-        #d.add_fwi_stage(fc_low=0.0, fc_high=30.0)
-        d.add_fwi_stage(fc_low=4.0,fc_high=5.0)
-        # if ((epoch1 >= 0) and (epoch1 <=100 )):
-        #     d.add_fwi_stage(fc_low=0.0, fc_high=2.0)
-        # #     #print(f'Stage {i+1}:\n\t{d.fwi_stages[i]}\n')
-        # elif ((epoch1 >= 101) and (epoch1 <=200)):
-        #     d.add_fwi_stage(fc_low=0.0, fc_high=5.0)
-        # #     #print(f'Stage {i+1}:\n\t{d.fwi_stages[i]}\n')
-        # elif ((epoch1 >= 201) and (epoch1 <=300)):
-        #     d.add_fwi_stage(fc_low=0.0, fc_high=8.0)
-        # elif ((epoch1 >= 301) and (epoch1 <=400)):
-        #     d.add_fwi_stage(fc_low=0.0, fc_high=12.0)
-        # elif ((epoch1 >= 401) and (epoch1 <=500)):
-        #     d.add_fwi_stage(fc_low=0.0, fc_high=15.0)
-        # elif ((epoch1 >= 501) and (epoch1 <=600)):
-        #     d.add_fwi_stage(fc_low=0.0, fc_high=18.0)
-        # elif ((epoch1 >= 601) and (epoch1 <=700)):
-        #    d.add_fwi_stage(fc_low=0.0, fc_high=21.0)
-        #    #print(f'Stage {i+1}:\n\t{d.fwi_stages[i]}\n')
-        # else:
-        #    d.add_fwi_stage(fc_low=0.0, fc_high=21.0)
-        print(f'Stage {0}:\n\t{d.fwi_stages[0]}\n')
-            
-        #print(f'Stage {0}:\n\t{d.fwi_stages[0]}\n')
-        os.system('rm -rf loss_curve_grad.out')
-    
-        print(f'Target data: {d.DATA_DIR}')
-        d.grad(model_init, src, rec)
+
+        d.add_fwi_stage(fc_low=0.0,fc_high=10,lnorm=2)
+        #Abdo:: apply stages idea to reduce the nonlinearity of the FWI
+        # d.fwi_stages = []
+        # for i, freq in enumerate([2, 5, 10]):
+        #     d.add_fwi_stage(fc_low=0.0, fc_high=freq)
+        #     print(f'Stage {i+1}:\n\t{d.fwi_stages[i]}\n')
+
+        os.system('rm -rf /disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/seis_fwi_log.dat')
         
-        loss = np.loadtxt('loss_curve_grad.out')
-        
-        #print("loss :", loss)
-        
-        # grads, fnames = d.get_fwi_gradients(['c','old'],return_filenames=True)
-        
-        # print("shape of grads :", np.shape(grads))
-        # vp_grad = np.array(grads[0])
-        # vs_grad = np.array(grads[2])
-        # rho_grad = np.array(grads[1])
-        grads, fnames = d.get_fwi_gradients(['seis'],return_filenames=True)
-        vp_grad = np.array(grads[1])
+        d.fwi(model_init, src, rec,run_command='mpirun -np 30')
+        #read the misfit value
+        loss = np.loadtxt('/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/outputs/seis_fwi_log.dat')
+        # loss=loss[2,4]
+        loss=loss[4]
+        #get the gradients
+        grads, fnames = d.get_fwi_gradients(return_filenames=True)
+        #Are you sure about these indices of gradients are correct?
+        vp_grad = np.array(grads[0])
         vs_grad = np.array(grads[2])
-        rho_grad = np.array(grads[0])
-        
-        print("shape of vp_grad :", np.shape(vp_grad))
-        print("shape of vs_grad :", np.shape(vs_grad))
-        print("shape of rho_grad :", np.shape(rho_grad))
-        
-        vp_grad = np.flipud(vp_grad)
-        vs_grad = np.flipud(vs_grad)
-        rho_grad = np.flipud(rho_grad)
+        rho_grad = np.array(grads[1])
 
-        g1 = np.arange(np.shape(rho_grad)[0])
-        g1 = g1**1.0
-        ss = rho_grad*0
-        for i in range(np.shape(rho_grad)[1]):
-             ss[:,i] = g1
-        # rho_grad = scipy.ndimage.gaussian_filter(rho_grad,4)
-        rho_grad = rho_grad*ss
-        #g1 = np.transpose(g1)
-        #ss = np.matlib.repmat(g1,np.arange(np.shape(rho_grad)[0]),np.shape(rho_grad)[1])
-        #ss = g1.tile((np.shape(rho_grad)[1],1))
-        #print("shape of ss :", np.shape(ss))
-        
-        vp_grad[0:24,:] = 0.0
-        vs_grad[0:24,:] = 0.0
-        rho_grad[0:24,:] = 0.0
-        
-        print("shape of vp_grad1 :", np.shape(vp_grad))
-        print("shape of vs_grad1 :", np.shape(vs_grad))
-        print("shape of rho_grad1 :", np.shape(rho_grad))
-        
-        r = 10**5
-
+        # #apply some scaling to the gradients
+        # g1 = np.arange(np.shape(rho_grad)[0])
+        # g1 = g1**2.0
+        # ss = rho_grad*0
+        # for i in range(np.shape(rho_grad)[1]):
+        #      ss[:,i] = g1 
+        # rho_grad = rho_grad*ss
+    
         r1 = np.max(np.abs(vpst))/np.max(np.abs(vp_grad))
         vp_grad = torch.from_numpy(vp_grad.copy())
         vp_grad = vp_grad.float()
-        #r1 = 1.0
         vp_grad = 1.0*vp_grad*r1
-        #if (freq==1):
-        vp_grad = vp_grad
-        
+
         r2 = np.max(np.abs(vsst))/np.max(np.abs(vs_grad))
         vs_grad = torch.from_numpy(vs_grad.copy())
         vs_grad = vs_grad.float()  
-        #r2 = 1.0
         vs_grad = 1.0*vs_grad*r2
-        #vs_grad = vs_grad*0
         
         r3 = np.max(np.abs(rhost))/np.max(np.abs(rho_grad))
         rho_grad = torch.from_numpy(rho_grad.copy())
         rho_grad = rho_grad.float()
-        #r3 = 1.0
         rho_grad = 0.5*rho_grad*r3
-        rho_grad = (rho_grad + 1e-10)
+        # rho_grad = (rho_grad + 1e-10)
+
+        #make the water layer has zero gradients - do not update that layers
+        vp_grad[(vp==np.min(vp))] = 0
+        vs_grad[(vs==np.min(vs))] = 0
+        rho_grad [(rho==np.min(rho))] = 0
         
-        filen = './marmousiEl19Mar2/vpp' + str(epoch1) + '.npy' #switch on for physics based fwi       
+        filen = './AutoElMarmousi3/vpg' + str(epoch1) + '.npy' #switch on for physics based fwi       
         np.save(filen, vp_grad)  #switch on physics based fwi
-        
-        filen = './marmousiEl19Mar2/vss' + str(epoch1) + '.npy' #switch on for physics based fwi       
+        filen = './AutoElMarmousi3/vsg' + str(epoch1) + '.npy' #switch on for physics based fwi       
         np.save(filen, vs_grad)  #switch on physics based fwi
-        
-        filen = './marmousiEl19Mar2/rhoo' + str(epoch1) + '.npy' #switch on for physics based fwi       
+        filen = './AutoElMarmousi3/rhog' + str(epoch1) + '.npy' #switch on for physics based fwi       
         np.save(filen, rho_grad)  #switch on physics based fwi
-        
-        print('grads names')
-        print(fnames)
-        #vp_grad = 0
-        #vs_grad = 0
-        #rho_grad = 0
+
         return vp_grad, vs_grad, rho_grad, loss
 
 class AutoElFullRhoScaleMarmousiMar22_Net(nn.Module):
@@ -11154,7 +13385,7 @@ class AutoElFullRhoScaleMarmousiMar22_Net(nn.Module):
         #z = z.view(-1, filters[3], 250, 51) #for marmousi model
         #print("shape of z :", np.shape(z))
         z = z.view(-1, filters[3], 23, 52)
-        z1 = z.view(-1,filters[3],23,52)
+        z1 = z.view(-1,filters[3],23,52) #Abdo, z1 is exactly z? AM I CORRECT?
         #z2 = z2.view(-1, 4, 92, 208)
         #zrho = zrho.view(-1, 1, 100, 300)
         #down4 = torch.swapaxes(down4,2,3)
@@ -11386,7 +13617,7 @@ class AutoElFullRhoScaleMarmousiMar22_Net(nn.Module):
         vsst = np.flipud(vsst)
         rhost = np.flipud(rhost)
         
-        vpst = vpst*10.0
+        vpst = vpst*10.0 # why we multiply everything by 10?!
         vsst = vsst*10.0
         rhost = rhost*10.0
         
@@ -11442,7 +13673,7 @@ class AutoElFullRhoScaleMarmousiMar22_Net(nn.Module):
         #tshots = 8
         ###xsrc = xsrcoriginal[idx[it::1]]
         ############################xsrc = xsrcoriginal[idx[0:14]]
-        xsrc = xsrcoriginal[idx[0:7]]
+        xsrc = xsrcoriginal[idx[0:7]]#to implement the minibatch - here we use 8 shots
         #xsrc = xsrcoriginal
         #print("xsrc1 :", xsrc)
         #xsrc = np.sort(xsrc)
@@ -11481,7 +13712,8 @@ class AutoElFullRhoScaleMarmousiMar22_Net(nn.Module):
         #######################################################
         for i in range(0,tshots):
             print("idx :", idx[i])
-            copyshot(idx[i],i)
+            #idx is the index of the randomly selected shots. I still do not understand why we rename them
+            copyshot(idx[i],i) 
         d.DATA_DIR = '/disk/student/adhara/MARMOUSIInitial/su1/seisT'
         d.SEIS_FILE_VX = 'su1/seisT_x.su'
         d.SEIS_FILE_VY = 'su1/seisT_y.su'
@@ -11516,7 +13748,7 @@ class AutoElFullRhoScaleMarmousiMar22_Net(nn.Module):
         #d.VSLOWERLIM = 866.0
         #d.RHOUPPERLIM = 2294.0
         #d.RHOLOWERLIM = 1929.0
-        
+        #box constraints for velocity and density inversion
         d.VPUPPERLIM = 4767.0
         d.VPLOWERLIM = 1500.0
         d.VSUPPERLIM = 2752.0
@@ -11579,9 +13811,9 @@ class AutoElFullRhoScaleMarmousiMar22_Net(nn.Module):
         print(f'Stage {0}:\n\t{d.fwi_stages[0]}\n')
             
         #print(f'Stage {0}:\n\t{d.fwi_stages[0]}\n')
-        os.system('rm -rf loss_curve_grad.out')
+        os.system('rm -rf loss_curve_grad.out') #this file need to be renamed - this is the MISFIT_LOG_FILE
     
-        print(f'Target data: {d.DATA_DIR}')
+        print(f'Target data: {d.DATA_DIR}') #this print the DATA directory on screen
         d.grad(model_init, src, rec)
         
         loss = np.loadtxt('loss_curve_grad.out')
@@ -16390,12 +18622,13 @@ class AutoMarmousiWav_Net(nn.Module):
 class AutoMarmousiNF_Net(nn.Module):
 
     def subnet_fc(self, c_in, c_out):
+        # print("c_in=",c_in,"c_out=",c_out)
         return nn.Sequential(nn.Linear(c_in, 512), nn.ReLU(),
                             nn.Linear(512,  c_out))
 
     def subnet_cc(self, c_in, c_out):
-        return nn.Sequential(nn.Conv2d(8, 8, 3, stride=1), nn.ReLU(),
-                            nn.Conv2d(8,  8, 3, stride=1))
+        return nn.Sequential(nn.Conv2d(c_in, 16, 1, stride=1), nn.ReLU(),
+                            nn.Conv2d(16,  c_out, 1, stride=1))
 
     def __init__(self,outer_nc, inner_nc, input_nc=None,
                  submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
@@ -16409,21 +18642,21 @@ class AutoMarmousiNF_Net(nn.Module):
         #filters = [2, 4, 8, 16, 32]
         
         latent_dim = 8
-        ndim_tot = 150*200
+        ndim_tot = 150*500
 
-        nodes = [InputNode(151,200, name='input')]
-        nodes.append(Node(nodes[-1],Reshape,{'output_dims':[151*200]}))
+        nodes = [InputNode(150,500, name='input')]
+        nodes.append(Node(nodes[-1],Reshape,{'output_dims':[150*500]}))
 
         for k in range(4):
             nodes.append(Node(nodes[-1],
                          GLOWCouplingBlock,
-                         {'subnet_constructor':self.subnet_fc, 'clamp':2.0,'clamp_activation':"TANH"},
+                         {'subnet_constructor':self.subnet_fc, 'clamp':2.0,'clamp_activation':"TANH"}, #read FREAI to learn more about this
                          name=F'coupling_{k}'))
             nodes.append(Node(nodes[-1],
                          PermuteRandom,
                          {'seed':k},
                          name=F'permute_{k}'))
-        nodes.append(Node(nodes[-1],Reshape,{'output_dims':[1,151,200]}))
+        nodes.append(Node(nodes[-1],Reshape,{'output_dims':[1,150,500]}))
     #nodes.append(Node(nodes[-1],
     #                  PermuteRandom,
     #                  {'seed':k},
@@ -16432,30 +18665,35 @@ class AutoMarmousiNF_Net(nn.Module):
         nodes.append(OutputNode(nodes[-1], name='output'))
 
         self.model = ReversibleGraphNet(nodes, verbose=False)
+        self.smooth=nn.Conv2d(1, 1, 1)
 
         
     def forward(self, inputs1, inputs2, lstart, epoch1, latentI, lowf, z):
         filters = [16, 32, 64, 128, 512]
         latent_dim = 8
-        label_dsp_dim = (151,200)
+        label_dsp_dim = (150,500)
         mintrue = torch.min(inputs1)
         maxtrue = torch.max(inputs1)
         meandata = torch.mean(inputs2)
         stddata = torch.std(inputs2)
 
         print("device :",next(self.model.parameters()).device)
-
-        print("shape of z :", np.shape(z))
-        #print("device :", self.model.parameters().device)
-        ##z = torch.randn(1,1,151,200)
-        ##z = z.to(next(self.model.parameters()).device)
-        z = z
+        # print("device :", self.model.parameters().device)
+        z = 0.5*torch.randn(1,1,150,500) #reduce the standard deviation a bit as a hope to reduce the noise amplitude in the image
+        z = z.to(next(self.model.parameters()).device)
+        # z=lowf
+        z = z #Abdo::what is z here, is it seismic data or real velocity models?
+        # print("shape of z=", z.shape)
+        # print("shape of lowf=", lowf.shape)
+        #Abdo: are we doing it in supervised or unsupervised fashion?
         f = self.model(z)
-        f1 = f[0]
-        log_jac = f[1]
+        # print("f shape=",f[0].shape)
+        f1 = f[0] #the image (the result of the model is an image)
+        log_jac = f[1] #the jacobian
 
-        f2 = lowf + 0.001*f1
-        f2 = torch.clip(f2,min=1500.0,max=4766.6)
+        f2 = lowf + 0.01*f1
+        # f2 = mintrue + 0.01*f1
+        f2 = torch.clip(f2,min=mintrue,max=maxtrue)
 
         #port = inputs1.repeat(10,1,1,1)
         port = inputs1
@@ -16504,117 +18742,91 @@ class AutoMarmousiNF_Net(nn.Module):
                     
     # forward modeling to compute gradients
     def prop(self, inputs, vel, lstart, epoch1, mintrue, maxtrue, true):
-        
-        torch.cuda.set_device(0)  #RB Necessary if device <> 0
-        GPU_string='cuda:'+str(0)
+        torch.cuda.empty_cache()
+        torch.cuda.set_device(4)  #RB Necessary if device <> 0
+        GPU_string='cuda:'+str(4)
         devicek = torch.device(GPU_string)
-        #vel = vel.to(devicek)
-        #net1out1 = mintrue + vel*(maxtrue-mintrue)
+
         net1out1 = vel
-        #net1out1 = net1out2.to(devicek)
-        #net1out1 = (3550-1500)*vel+1500
-        #print("---shape of vel---", str(np.shape(vel)))
-        #print("devicek :", devicek)
         net1out1 = net1out1.detach()
         net1out1 = torch.squeeze(net1out1)
         g1 = torch.arange(net1out1.size(dim=0))
-        g1 = g1**2.0
+        g1 = g1**2
+        #Abdo:: what is ss, why we are scaling the gradient with this (which is a sort of the velocity model)
         ss = g1.tile((200,1))
         ss = torch.transpose(ss,0,1)
-        net1out1 = net1out1.to(devicek)
-        #devicek = net1out1.get_device()
-        #net1out1[0:26,:] = 1500.0
 
-        
+        net1out1 = net1out1.to(devicek)
+
         freq = 8
         dx = 10
         nt = 4001
         dt = 0.001
-        num_shots = 30
-        num_receivers_per_shot = 200
+        num_shots = 24
+        num_receivers_per_shot = 240
         num_sources_per_shot = 1
         num_dims = 2
-        #ModelDim = [201,301]
-        ny = 200
-        source_spacing = 200 * dx / num_shots
-        receiver_spacing = 200 * dx / num_receivers_per_shot
+
+        ny = 1000
+        source_spacing = 20
+        receiver_spacing = 2
+
+        source_depth  = 0 # 4 x dx
+        first_source = 20 # 40 x dx
         x_s = torch.zeros(num_shots, num_sources_per_shot, num_dims)
-        x_s[:, 0, 1] = torch.linspace(0,(ny-1)*dx,num_shots)
+        x_s[:,:, 0] = source_depth #the z coordinate
+        x_s[:, 0, 1] = (torch.arange(num_shots) * source_spacing + first_source)
+
+        receiver_depth = 0 # 5 x dx 
+        first_receiver = 20 # 5 x dx
         x_r = torch.zeros(num_shots, num_receivers_per_shot, num_dims)
-        x_r[0, :, 1] = torch.arange(num_receivers_per_shot).float() * receiver_spacing
-        x_r[:, :, 1] = x_r[0, :, 1].repeat(num_shots, 1)
+        x_r[..., 0] = receiver_depth
+        x_r[:, :, 1] = (
+            (torch.arange(num_receivers_per_shot) * receiver_spacing +
+            first_receiver)
+            .repeat(num_shots, 1)
+        )
 
         source_amplitudes_true = (deepwave.wavelets.ricker(freq, nt, dt, 1/freq)
-                                  .reshape(-1, 1, 1))
-        #print("device ordinal :", self.devicek)
+                                #   .reshape(-1, 1, 1)
+                                  )
+
         source_amplitudes_true = source_amplitudes_true.to(devicek)
-        #lstart = -1
-        num_batches = 3
+        num_batches = 2 # try not to use batches for deterministic inversion and see what would happen?!
         num_epochs = 1
         if (epoch1 > lstart):
             num_epochs = 1
-        #if (epoch1 > 50):
-        #    num_epochs = 30
-        #if (epoch1 > 80):
-        #    num_epochs = 40 
+
         num_shots_per_batch = int(num_shots / num_batches)
-        #print("size of self.realA")
-        # print(np.shape(self.real_A))
         sumlossinner = 0.0
         ss = ss.to(devicek)
-        ################data misfit calculation##########################################
 
-        #net1out1 = net1out1.to(self.devicek)
 
         receiver_amplitudes_true = inputs[0,:,:,:]
-        receiver_amplitudes_true = receiver_amplitudes_true.swapaxes(0,1)
         receiver_amplitudes_true = receiver_amplitudes_true.to(devicek)
-        #print("shape of receiver amplitudes true")
-        #print(np.shape(receiver_amplitudes_true))
 
-        ######rcv_amps_true_norm = receiver_amplitudes_true
-        #print("receiver amplitude true shape")
-        # print(np.shape(receiver_amplitudes_true))
-        #net1out1 = net1out.detach()
-        #net1out1 = torch.tensor(net1out1)
-        #net1out1 = net1out1*(4500-2000)+2000
-        #print(np.shape(net1out1))
-        #min1 = torch.min(net1out1)
-        #print("min1 :", min1)
-        #print(min1.get_device())
-        #min1 = min1.to(self.device1)
         mat2 = torch.ones(net1out1.size()[0],net1out1.size()[1]).to(devicek)
         mat2 = mat2 * 1500
-        #mat2 = torch.clamp(mat2,min=1500,max=3550)
-        #min1 = torch.min(net1out1)
-        #max1 = torch.max(net1out1)
-        #if (epoch1 == 52): 
-        #np.save('./deepwave/before1.npy',net1out1.cpu().detach().numpy())
-        # np.save('ftout1',net1out1.cpu().numpy())
-        #net1out1 = net1out1.to(self.devicek)
-        #mat2 = mat2.to(self.devicek)
+        mat2[net1out1.size(dim=0)-1,int(net1out1.size(dim=1)/2)]=torch.max(net1out1) 
+
+        # print (" I am Here")
         src_amps = source_amplitudes_true.repeat(
-                        1, num_shots, 1)
-        prop2 = deepwave.scalar.Propagator({'vp': mat2}, dx)
-        receiver_amplitudes_cte = prop2(src_amps,
-                                x_s.to(devicek),
-                                x_r.to(devicek), dt)
-        
-        receiver_amplitudes_true = receiver_amplitudes_true - receiver_amplitudes_cte
-        
-        #print("receiver_amplitudes_true :", np.shape(receiver_amplitudes_true))
-        #print("receiver_amplitudes_cte :", np.shape(receiver_amplitudes_cte))
-        #receiver_amplitudes_true = receiver_amplitudes_true
-        rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=0, keepdim=True)
-        #rcv_amps_true_norm = receiver_amplitudes_true / (rcv_amps_true_max.abs() + 1e-10)
-        rcv_amps_true_norm = receiver_amplitudes_true
+                        num_shots, 1, 1)
+        receiver_amplitudes_cte = deepwave.scalar(mat2.to(devicek), dx, dt,
+        source_amplitudes=src_amps.to(devicek),
+        source_locations=x_s.to(devicek),
+        receiver_locations=x_r.to(devicek))[-1].to(devicek)
+        receiver_amplitudes_cte=torch.transpose(receiver_amplitudes_cte,1,2)
+        receiver_amplitudes_true = receiver_amplitudes_true
 
+        rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=1, keepdim=True)
+        rcv_amps_true_norm = receiver_amplitudes_true / (rcv_amps_true_max.abs() + 1e-10)
+
+        
         criterion1 = torch.nn.L1Loss()
-        #vgg = Vgg16().type(torch.cuda.FloatTensor)
-        #criterion2 = torch.nn.MSELoss()
-        #print("shape of mat2 :", np.shape(mat2))
-        
 
+        
+        misfit=0
         if (epoch1 > lstart):
             net1out1.requires_grad = True
             optimizer2 = torch.optim.Adam([{'params': [net1out1], 'lr':10}])
@@ -16625,74 +18837,85 @@ class AutoMarmousiNF_Net(nn.Module):
                 #idx = idx.type(torch.LongTensor)
                 x_s = x_s.view(-1,2)[idx].view(x_s.size())
                 #RB Shuffle true's seismograms sources with same random values
-                rcv_amps_true_norm = rcv_amps_true_norm[:,idx,:]
+                rcv_amps_true_norm = rcv_amps_true_norm[idx,:,:]
                 #RB Shuffle direct wave seismograms sources with the same random values
-                receiver_amplitudes_cte = receiver_amplitudes_cte[:,idx,:]
+                receiver_amplitudes_cte = receiver_amplitudes_cte[idx,:,:]
         
                 for it in range(num_batches):
                     #if (epoch1 > lstart):
                     optimizer2.zero_grad()
                     model2 = net1out1.clone()
-                    model2 = torch.clamp(net1out1,min=mintrue,max=maxtrue)
-                    #np.save('before108.npy',net1out1.cpu().detach().numpy())
-                    #net1out1 = torch.clamp(net1out1,min=2000,max=4500)
-                    prop = deepwave.scalar.Propagator({'vp': model2}, dx)
-                    batch_src_amps = source_amplitudes_true.repeat(1, num_shots_per_batch, 1)
-                    #print("shape of batch src amps")
-                    #print(np.shape(batch_src_amps))
-                    ############batch_rcv_amps_true = rcv_amps_true_norm[:,it::num_batches].to(self.devicek)
-                    batch_rcv_amps_true = rcv_amps_true_norm[:,it::num_batches]
-                    batch_rcv_amps_cte = receiver_amplitudes_cte[:,it::num_batches]
-                    batch_x_s = x_s[it::num_batches].to(devicek)
-                    ##################batch_x_s = x_s[it::num_batches]
-                    #print("shape of batch src amps")
-                    # print(np.shape(batch_x_s))
-                    #####################batch_x_r = x_r[it::num_batches]
-                    batch_x_r = x_r[it::num_batches].to(devicek)
-                    #print("shape of batch receiver amps")
-                    # print(np.shape(batch_x_r))
-                    batch_rcv_amps_pred = prop(batch_src_amps, batch_x_s, batch_x_r, dt)
-                    #print("batch_rcv_amps_pred")
-                    #print(np.shape(batch_rcv_amps_pred))
-                    batch_rcv_amps_pred = batch_rcv_amps_pred - batch_rcv_amps_cte
-                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=0, keepdim=True)
-                    # Normalize amplitudes by dividing by the maximum amplitude of each receiver
-                    #batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10)
-                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred 
-                    ##############batch_rcv_amps_pred_norm = batch_rcv_amps_pred
+                    model2 = torch.clamp(net1out1,min=mintrue.to(devicek),max=maxtrue.to(devicek))
+
+                    batch_src_amps = source_amplitudes_true.repeat(num_shots_per_batch, 1, 1)
+
+                    batch_rcv_amps_true = rcv_amps_true_norm[it::num_batches].to(devicek)
+                    batch_rcv_amps_cte = receiver_amplitudes_cte[it::num_batches].to(devicek)
+                    batch_x_s = x_s[it::num_batches,:,:].to(devicek)
+
+                    batch_x_r = x_r[it::num_batches,:,:].to(devicek)
+
+                    batch_rcv_amps_pred = deepwave.scalar(model2.to(devicek), dx, dt,
+                    source_amplitudes=batch_src_amps.to(devicek),
+                    source_locations=batch_x_s.to(devicek),
+                    receiver_locations=batch_x_r.to(devicek))[-1].to(devicek)
+
+                    batch_rcv_amps_pred=torch.transpose(batch_rcv_amps_pred,1,2)
+                    batch_rcv_amps_cte_max, _ = torch.abs(batch_rcv_amps_cte).max(dim=1, keepdim=True)
+                    batch_rcv_amps_cte_norm = batch_rcv_amps_cte / (batch_rcv_amps_cte_max.abs() + 1e-10)
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True) 
+                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10) 
                     
-                    #print("shape of receiver amplitudes predicted")
-                    # print(np.shape(batch_rcv_amps_pred))
+                    batch_rcv_amps_pred = batch_rcv_amps_pred - batch_rcv_amps_cte
+                                            
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True)
+                    batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10)
+
                     lossinner1 = criterion1(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
-                    #lossinner2 = criterion2(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
+                    
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_predTrans' + str(num_batches)+'ep'+str(epoch1)+'.npy'      
+                    # np.save(filen, batch_rcv_amps_pred.cpu().detach().numpy()) 
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_cte' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                    # np.save(filen, batch_rcv_amps_cte.cpu().detach().numpy())
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_true' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                    # np.save(filen, batch_rcv_amps_true.cpu().detach().numpy())
+                    # filen = './vaeFull51ccLatent5/batch_rcv_amps_pred_norm' + str(num_batches)+'ep'+str(epoch1)+'.npy'   
+                    # np.save(filen, batch_rcv_amps_pred_norm.cpu().detach().numpy())
+
+
+
+                    #CC functional
+                    # nrsrc=num_shots_per_batch
+                    # nrcv=batch_rcv_amps_pred.shape[2]
+                    # lossinner1=0
+                    # for isrc in range(nrsrc):
+                    #     for ircv in range(nrcv):
+                    #         lossinner1=lossinner1+1-(torch.dot(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek), batch_rcv_amps_true[isrc,:,ircv].to(devicek)))/(torch.norm(batch_rcv_amps_pred_norm[isrc,:,ircv].to(devicek))*torch.norm(batch_rcv_amps_true[isrc,:,ircv].to(devicek)))                    
+
+                    #L2 functional
+                    # lossinner1 = criterion2(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
+    
+                   
                     lossinner = lossinner1
-                    #y_c_features = vgg(torch.unsqueeze(batch_rcv_amps_true,0))
-                    #########model2.grad[0:26,:] = 0
-                    #filen = './deepwave/epoch1'+str(epoch)+'.npy'
-                    #np.save(filen,net1out1.cpu().detach().numpy())
-                    ##############if (epoch == num_epochs-1):
-                    ##########    sumlossinner += lossinner.item()
-                    #########if (epoch1 > lstart):
+
                     lossinner.backward()
-                    net1out1.grad = net1out1.grad * ss
+                    misfit =misfit+lossinner.item()
+
+                    net1out1.grad = net1out1.grad #Abdo:: try not multiplying with this ss and see what will happen
+
+                    # filen = './vaeFull51ccLatent5/GradAD' + str(num_batches)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                    # np.save(filen, net1out1.grad.cpu().detach().numpy())  #switch on physics based fwi
+                
+                    # filen = './vaeFull51ccLatent5/FakeAD' + str(num_batches)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                    # np.save(filen, self.model2.cpu().detach().numpy())  #switch on physics based fwi
+                    
+                    # filen = './vaeFull51ccLatent5/RealAD' + str(num_batches)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+                    # np.save(filen, self.real_B.cpu().detach().numpy())  #switch on physics based fwi
+
                     net1out1.grad[(true[0,0,:,:]==1500)] = 0
-                    #net1out1.grad[0:26,:] = 0
-                    ##########optimizer2.step()
-                    #epoch_loss += loss.item()
-                    #optimizer2.step()
-        #if (epoch1 == 52): 
-        #print("shape of inputs :", np.shape(inputs))
-        #np.save('./marmousi/rcv_amplitudes.npy',batch_rcv_amps_pred.cpu().detach().numpy())
-        #np.save('./marmousi/rcv_amplitudes_true.npy',batch_rcv_amps_true.cpu().detach().numpy())
-        #np.save('./marmousi/rcv_amplitudes_true_cte.npy',batch_rcv_amps_cte.cpu().detach().numpy())
-        #np.save('./marmousi/net1o420ut1.npy',net1out1.cpu().detach().numpy())
-        #np.save('./marmousi/netgrad1.npy',net1out1.grad.cpu().detach().numpy())
-        #np.save('./deepwave/seis231.npy',batch_rcv_amps_pred.cpu().detach().numpy())
-        #net1out1 = (net1out1 - 2000)/(4500-2000)
-        #net1out1 = (net1out1-2000)/(4500-2000)
-        #net1out1.grad = net1out1.grad*1000
+
                  
-        return net1out1.grad, lossinner.item()
+        return net1out1.grad, misfit
     
     
 class SimpleMarmousi24_Net(nn.Module):
@@ -17774,7 +19997,8 @@ class Vae_Net(nn.Module):
         self.n_classes = inner_nc
 
         filters = [16, 32, 64, 128, 512]
-        latent_dim = 8
+        # filters = [4, 8, 16, 32, 64]
+        latent_dim = 256
 
         self.down1 = unetDown(self.in_channels, filters[0], self.is_batchnorm)
         self.down2 = unetDown(filters[0], filters[1], self.is_batchnorm)
@@ -17782,8 +20006,8 @@ class Vae_Net(nn.Module):
         #self.down4 = unetDown(filters[2], filters[3], self.is_batchnorm)
         #self.center = unetConv2(filters[3], filters[4], self.is_batchnorm)
 
-        self.fc_mu = nn.Linear(filters[2]*125*9, latent_dim)
-        self.fc_var = nn.Linear(filters[2]*125*9, latent_dim)
+        self.fc_mu = nn.Linear(filters[2]*126*8, latent_dim)
+        self.fc_var = nn.Linear(filters[2]*126*8, latent_dim)
         
 
         self.decoder_input = nn.Linear(latent_dim, filters[3]*50*13)
@@ -17794,12 +20018,17 @@ class Vae_Net(nn.Module):
         self.up1 = autoUp(filters[1], filters[0], self.is_deconv)
         self.f1 = nn.Conv2d(filters[0], self.n_classes, 1)
         self.final = nn.ReLU(inplace=True)
+        # self.final = nn.LeakyReLU(0.1) #ABDO:: see the effect of using this!!!
 
     def encode(self, inputs):
         label_dsp_dim = (70,70)
+        inputs=inputs.swapaxes(1,3)
+        # print ("shape of inputs=",inputs.shape)
         down1 = self.down1(inputs)
+        # print ("shape of down1=",down1.shape)
         down2 = self.down2(down1)
         down3 = self.down3(down2)
+        # print ("shape of down3=",down3.shape)
         #down4 = self.down4(down3)
         #center = self.center(down4)
         
@@ -17841,37 +20070,33 @@ class Vae_Net(nn.Module):
         return eps * std + mu
         
 
-    # def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
-    #     """
-    #     Reparameterization trick to sample from N(mu, var) from
-    #     N(0,1).
-    #     :param mu: (Tensor) Mean of the latent Gaussian [B x D]
-    #     :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
-    #     :return: (Tensor) [B x D]
-    #     """
-    #     std = torch.exp(0.5 * logvar)
-    #     eps = torch.randn_like(std)
-    #     return eps * std + mu
-
     def forward(self, inputs1, inputs2, lstart, epoch1, p, lowf):
         mu,log_var = self.encode(inputs2)
         z = self.reparameterize(mu, log_var)
-        #print("shape of z: ", np.shape(z))
+        # print("shape of z: ", np.shape(z))
+        # print("shape of z: ", np.shape(inputs1))
+        #decide on the dim of max and min later
+        minvel=torch.min(inputs1)
+        maxvel=torch.max(inputs1)
         de1 = self.decode(z)
-        de1 = 2000 + de1*(4500-2000)
-        de1[(inputs1==2000)] = 2000
+        # de1 = 2000 + de1*(4500-2000)
+        de1 = minvel + de1*(maxvel-minvel)
+        # de1 = lowf + de1
+        de1[(inputs1==minvel)] = minvel
+
         
         #de1 = torch.clip(de1, min=2000, max= 4500)
         #print("shape of de1 :", np.shape(de1))
         #print(type(de1))
         grad = 0*de1
+        misfit=0
         if (epoch1 > lstart):
-            grad = self.prop(inputs2, de1, lstart, epoch1, inputs1)
+            [grad, misfit] = self.prop(inputs2, de1, lstart, epoch1, inputs1)
             grad = torch.unsqueeze(grad,0)
             grad = torch.unsqueeze(grad,0)
             #print("shape of de2")
             #print(np.shape(de2))    
-        return  de1, mu, log_var, grad
+        return  de1, mu, log_var, grad, misfit
 
     # Initialization of Parameters
     def  _initialize_weights(self):
@@ -17902,96 +20127,78 @@ class Vae_Net(nn.Module):
         #print("---shape of vel---", str(np.shape(vel)))
         net1out1 = net1out1.detach()
         net1out1 = torch.squeeze(net1out1)
+        # print ("shape of net1out1",net1out1.shape)
         #net1out1 = net1out1.to(devicek)
         devicek = net1out1.get_device()
         #net1out1[0:26,:] = 1500.0
-
+        minvel=torch.min(true)
+        maxvel=torch.max(true)
         
-        freq = 30
+        freq = 15
         dx = 10
-        nt = 800
-        dt = 0.0015
-        num_shots = 10
-        num_receivers_per_shot = 101
+        nt = 1001
+        dt = 0.001
+        num_shots = 7
+        num_receivers_per_shot = 60
         num_sources_per_shot = 1
         num_dims = 2
-        #ModelDim = [201,301]
-        source_spacing = 101 * dx / num_shots
-        receiver_spacing = 101 * dx / num_receivers_per_shot
+        source_depth  = 0 # 4 x dx
+        first_source = 5 # 40 x dx
+        receiver_depth = 0 # 5 x dx 
+        first_receiver = 5 # 5 x dx
+        source_spacing = 10
+        receiver_spacing = 1.0
         x_s = torch.zeros(num_shots, num_sources_per_shot, num_dims)
-        x_s[:, 0, 1] = torch.arange(num_shots).float() * source_spacing
-        x_r = torch.zeros(num_shots, num_receivers_per_shot, num_dims)
-        x_r[0, :, 1] = torch.arange(
-            num_receivers_per_shot).float() * receiver_spacing
-        x_r[:, :, 1] = x_r[0, :, 1].repeat(num_shots, 1)
+        x_s[:,:, 0] = source_depth #the z coordinate
+        x_s[:, 0, 1] = (torch.arange(num_shots) * source_spacing + first_source)
 
+        x_r = torch.zeros(num_shots, num_receivers_per_shot, num_dims)
+        x_r[..., 0] = receiver_depth
+        x_r[:, :, 1] = (
+            (torch.arange(num_receivers_per_shot) * receiver_spacing +
+            first_receiver)
+            .repeat(num_shots, 1)
+        )
         source_amplitudes_true = (deepwave.wavelets.ricker(freq, nt, dt, 1/freq)
-                                  .reshape(-1, 1, 1))
-        #print("device ordinal :", self.devicek)
-        source_amplitudes_true = source_amplitudes_true.to(devicek)
-        #lstart = -1
+                            #   .reshape(-1, 1, 1)
+                                )
+        
+        src_amps = source_amplitudes_true.repeat(
+                            num_shots, 1, 1)
+        src_amps = src_amps.to(devicek)
         num_batches = 1
         num_epochs = 1
         if (epoch1 > lstart):
             num_epochs = 1
-        #if (epoch1 > 50):
-        #    num_epochs = 30
-        #if (epoch1 > 80):
-        #    num_epochs = 40 
+
         num_shots_per_batch = int(num_shots / num_batches)
-        #print("size of self.realA")
-        # print(np.shape(self.real_A))
         sumlossinner = 0.0
 
         ################data misfit calculation##########################################
 
-        #net1out1 = net1out1.to(self.devicek)
+        receiver_amplitudes_true = inputs[0,:,:,:] #Abdo: the first index is the batch index
+        receiver_amplitudes_true = receiver_amplitudes_true.swapaxes(0,2)
 
-        receiver_amplitudes_true = inputs[0,:,:,:]
-        receiver_amplitudes_true = receiver_amplitudes_true.swapaxes(0,1)
         receiver_amplitudes_true = receiver_amplitudes_true.to(devicek)
-        #print("shape of receiver amplitudes true")
-        #print(np.shape(receiver_amplitudes_true))
 
-        ######rcv_amps_true_norm = receiver_amplitudes_true
-        #print("receiver amplitude true shape")
-        # print(np.shape(receiver_amplitudes_true))
-        #net1out1 = net1out.detach()
-        #net1out1 = torch.tensor(net1out1)
-        #net1out1 = net1out1*(4500-2000)+2000
-        #print(np.shape(net1out1))
-        min1 = torch.min(net1out1)
-        #print("min1 :", min1)
-        #print(min1.get_device())
-        #min1 = min1.to(self.device1)
+        min1 = torch.min(true)
         mat2 = torch.ones(net1out1.size()[0],net1out1.size()[1]).to(devicek)
-        mat2 = mat2 * 2000.0
-        #mat2 = torch.clamp(mat2,min=1500,max=3550)
-        #min1 = torch.min(net1out1)
-        #max1 = torch.max(net1out1)
-        #if (epoch1 == 52): 
-        #np.save('./deepwave/before1.npy',net1out1.cpu().detach().numpy())
-        # np.save('ftout1',net1out1.cpu().numpy())
-        #net1out1 = net1out1.to(self.devicek)
-        #mat2 = mat2.to(self.devicek)
-        src_amps = source_amplitudes_true.repeat(
-                        1, num_shots, 1)
-        prop2 = deepwave.scalar.Propagator({'vp': mat2}, dx)
-        receiver_amplitudes_cte = prop2(src_amps,
-                                x_s.to(devicek),
-                                x_r.to(devicek), dt)
+     
+        mat2=mat2*min1
+
+        receiver_amplitudes_cte = deepwave.scalar(torch.Tensor(mat2).to(devicek), dx, dt,
+        source_amplitudes=src_amps.to(devicek),
+        source_locations=x_s.to(devicek),
+        receiver_locations=x_r.to(devicek))[-1]
+        receiver_amplitudes_cte=receiver_amplitudes_cte.swapaxes(1,2)
         
         receiver_amplitudes_true = receiver_amplitudes_true-receiver_amplitudes_cte
         
-        #print("receiver_amplitudes_true :", np.shape(receiver_amplitudes_true))
-        #print("receiver_amplitudes_cte :", np.shape(receiver_amplitudes_cte))
-        #receiver_amplitudes_true = receiver_amplitudes_true
-        rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=0, keepdim=True)
+        rcv_amps_true_max, _ = torch.abs(receiver_amplitudes_true).max(dim=1, keepdim=True)
         rcv_amps_true_norm = receiver_amplitudes_true / (rcv_amps_true_max.abs() + 1e-10)
 
-        criterion = torch.nn.MSELoss()
-
-        #print("shape of mat2 :", np.shape(mat2))
+        # criterion = torch.nn.MSELoss()
+        criterion = torch.nn.L1Loss()
         
 
         if (epoch1 > lstart):
@@ -18000,79 +20207,41 @@ class Vae_Net(nn.Module):
 
         for epoch in range(num_epochs):
                 #Shuffle shot coordinates
-                idx = torch.randperm(num_shots)
-                #idx = idx.type(torch.LongTensor)
-                x_s = x_s.view(-1,2)[idx].view(x_s.size())
-                #RB Shuffle true's seismograms sources with same random values
-                rcv_amps_true_norm = rcv_amps_true_norm[:,idx,:]
-                #RB Shuffle direct wave seismograms sources with the same random values
-                receiver_amplitudes_cte = receiver_amplitudes_cte[:,idx,:]
-        
+                # idx = torch.randperm(num_shots)
+                # #idx = idx.type(torch.LongTensor)
+                # x_s = x_s.view(-1,2)[idx].view(x_s.size())
+                # #RB Shuffle true's seismograms sources with same random values
+                # rcv_amps_true_norm = rcv_amps_true_norm[idx,:,:]
+                # #RB Shuffle direct wave seismograms sources with the same random values
+                # receiver_amplitudes_cte = receiver_amplitudes_cte[idx,:,:]
+                lossinnertot=0
                 for it in range(num_batches):
                     #if (epoch1 > lstart):
                     optimizer2.zero_grad()
                     model2 = net1out1.clone()
-                    model2 = torch.clamp(net1out1,min=2000,max=4500)
-                    #np.save('before108.npy',net1out1.cpu().detach().numpy())
-                    #net1out1 = torch.clamp(net1out1,min=2000,max=4500)
-                    prop = deepwave.scalar.Propagator({'vp': model2}, dx)
-                    batch_src_amps = source_amplitudes_true.repeat(1, num_shots_per_batch, 1)
-                    #print("shape of batch src amps")
-                    #print(np.shape(batch_src_amps))
-                    ############batch_rcv_amps_true = rcv_amps_true_norm[:,it::num_batches].to(self.devicek)
-                    batch_rcv_amps_true = rcv_amps_true_norm[:,it::num_batches]
-                    batch_rcv_amps_cte = receiver_amplitudes_cte[:,it::num_batches]
-                    batch_x_s = x_s[it::num_batches].to(devicek)
-                    ##################batch_x_s = x_s[it::num_batches]
-                    #print("shape of batch src amps")
-                    # print(np.shape(batch_x_s))
-                    #####################batch_x_r = x_r[it::num_batches]
-                    batch_x_r = x_r[it::num_batches].to(devicek)
-                    #print("shape of batch receiver amps")
-                    # print(np.shape(batch_x_r))
-                    batch_rcv_amps_pred = prop(batch_src_amps, batch_x_s, batch_x_r, dt)
-                    #print("batch_rcv_amps_pred")
-                    #print(np.shape(batch_rcv_amps_pred))
+                    # model2 = torch.clamp(net1out1,min=minvel.to(devicek),max=maxvel.to(devicek)) #ABDO:: play around this!!
+
+                    batch_src_amps = source_amplitudes_true.repeat(num_shots_per_batch, 1, 1)
+
+                    batch_rcv_amps_true = rcv_amps_true_norm[it::num_batches].to(devicek)
+                    batch_rcv_amps_cte = receiver_amplitudes_cte[it::num_batches].to(devicek)
+
+                    batch_x_s = x_s[it::num_batches,:,:].to(devicek)
+                    batch_x_r = x_r[it::num_batches,:,:].to(devicek)
+                    batch_rcv_amps_pred = deepwave.scalar(model2.to(devicek), dx, dt,
+                    source_amplitudes=batch_src_amps.to(devicek),
+                    source_locations=batch_x_s.to(devicek),
+                    receiver_locations=batch_x_r.to(devicek))[-1].to(devicek)
+                    batch_rcv_amps_pred = batch_rcv_amps_pred.swapaxes(1,2)
                     batch_rcv_amps_pred = batch_rcv_amps_pred-batch_rcv_amps_cte
-                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=0, keepdim=True)
+                    batch_rcv_amps_pred_max, _ = torch.abs(batch_rcv_amps_pred).max(dim=1, keepdim=True)
                     # Normalize amplitudes by dividing by the maximum amplitude of each receiver
                     batch_rcv_amps_pred_norm = batch_rcv_amps_pred / (batch_rcv_amps_pred_max.abs() + 1e-10)
-                    ##############batch_rcv_amps_pred_norm = batch_rcv_amps_pred
-                    
-                    #print("shape of receiver amplitudes predicted")
-                    # print(np.shape(batch_rcv_amps_pred))
                     lossinner = criterion(batch_rcv_amps_pred_norm, batch_rcv_amps_true)
-                    
-                    #########model2.grad[0:26,:] = 0
-                    #filen = './deepwave/epoch1'+str(epoch)+'.npy'
-                    #np.save(filen,net1out1.cpu().detach().numpy())
-                    ##############if (epoch == num_epochs-1):
-                    ##########    sumlossinner += lossinner.item()
-                    #########if (epoch1 > lstart):
                     lossinner.backward()
-                    net1out1.grad[(true[0,0,:,:]==2000)] = 0
-                    #po = (true[:,:,:,:] == 2000)
-                    #po = 1 - po.float()
-                    #po = tgm.image.gaussian_blur(po, (5, 5), (8.0, 8.0))
-                    #print("type :", net1out1.type())
-                    #net1out1.grad = net1out1.grad*po[0,0,:,:]
-                    ##########optimizer2.step()
-                    #epoch_loss += loss.item()
-                    #optimizer2.step()
-        #if (epoch1 == 52): 
-        #print("shape of inputs :", np.shape(inputs))
-        #np.save('./marmousi/rcv_amplitudes.npy',batch_rcv_amps_pred.cpu().detach().numpy())
-        #np.save('./marmousi/rcv_amplitudes_true.npy',batch_rcv_amps_true.cpu().detach().numpy())
-        #np.save('./marmousi/rcv_amplitudes_true_cte.npy',batch_rcv_amps_cte.cpu().detach().numpy())
-        #np.save('./marmousi/net1o420ut1.npy',net1out1.cpu().detach().numpy())
-        #np.save('./marmousi/netgrad1.npy',net1out1.grad.cpu().detach().numpy())
-        #np.save('./marmousi/po.npy',po.cpu().detach().numpy())
-        #np.save('./deepwave/seis231.npy',batch_rcv_amps_pred.cpu().detach().numpy())
-        #net1out1 = (net1out1 - 2000)/(4500-2000)
-        #net1out1 = (net1out1-2000)/(4500-2000)
-        #net1out1.grad = net1out1.grad*1000
-                 
-        return net1out1.grad
+                    net1out1.grad[(true[0,0,:,:]==minvel)] = 0
+                    lossinnertot+=lossinner      
+        return net1out1.grad, lossinnertot
     # def sample(self,
     #            num_samples:int,
     #            current_device: int, **kwargs) -> Tensor:

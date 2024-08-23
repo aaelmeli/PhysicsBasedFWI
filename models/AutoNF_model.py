@@ -11,10 +11,11 @@ from joblib import Parallel, delayed
 #import ray
 import time
 import os
-#import scipy
+import scipy
 import torchgeometry as tgm
 from seisgan.optimizers import MALA, SGHMC
 import torch.nn as nn
+from torchvision.transforms import v2
 
 #from vgg import Vgg16
 
@@ -104,7 +105,9 @@ class AutoNFModel(BaseModel):
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
         self.loss_names = ['D_MSE', 'M_MSE', 'V_MSE', 'K_MSE']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
-        self.visual_names = ['fake_B','real_B','fake_BT', 'real_BT']
+        # self.visual_names = ['fake_B','real_B','fake_BT', 'real_BT']
+        # self.visual_names = ['fake_B','real_B']
+        self.visual_names = ['fake_BT','real_BT']
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>
         if self.isTrain:
             self.model_names = ['G']
@@ -152,7 +155,8 @@ class AutoNFModel(BaseModel):
         if (epoch1 == 1):
             self.latent = torch.ones(1,1,1,1)
         [self.fake_B,self.grad,self.jac,self.loss_D_MSE,self.down3,self.up2,self.up1] = self.netG(self.real_B,self.real_A,lstart,epoch1,self.latent,self.real_C,self.real_D)  # G(A)
-        
+        print("log_det_jac",self.jac)
+        self.jac=1*self.jac/(10**3) #negate the log_det_jac to match the equation in Herrmann paper
         #self.latent = self.latent.clone().detach()
         #print("self.latent :", self.latent)
         #self.real_C = self.fake_B
@@ -201,6 +205,22 @@ class AutoNFModel(BaseModel):
         # combine loss and calculate gradients
         self.loss_G = self.loss_M_MSE
         self.loss_G.backward()
+
+
+    def gaussian(M, std, sym=True):
+        if M < 1:
+            return torch.array([])
+        if M == 1:
+            return torch.ones(1, 'd')
+        odd = M % 2
+        if not sym and not odd:
+            M = M + 1
+        n = torch.arange(0, M) - (M - 1.0) / 2.0
+        sig2 = 2 * std * std
+        w = torch.exp(-n ** 2 / sig2)
+        if not sym and not odd:
+            w = w[:-1]
+        return w
         
     def backward_G11(self, epoch1, batch, lstart):
             
@@ -280,6 +300,7 @@ class AutoNFModel(BaseModel):
         
         self.loss_G = lambda1 * self.loss_M_MSE + lambda2 * self.loss_M1_MSE
         ####self.loss_G = lambda2 * self.loss_M1_MSE
+        # self.loss_G.backward()
         
         if (epoch1 <= lstart):
             print("1st epoch1 :", epoch1)
@@ -362,16 +383,22 @@ class AutoNFModel(BaseModel):
         #grad = torch.unsqueeze(torch.unsqueeze(self.grad,0),1) #switch on for physics based fwi
         #grad = grad.to(self.fake_B.get_device()) #switch on for physics based fwi
         #print("shape of self grad :", np.shape(self.grad))
-            #priorG = torch.norm(self.fake_B-self.real_C)**2/0.0000000000001
-            #print("priorG :", priorG)
+            # priorG = torch.norm(self.fake_B-self.real_C)**2/0.0000000000001 # Abdo: is this computed correctly?
+            Gblur  = v2.GaussianBlur(kernel_size=(1, 1), sigma=(1.,1.)) #do some sort of smoothing, equivalent to have fully populated covariance matrix.
+            self.fake_B=Gblur(self.fake_B)
+            # self.smoothedfakeB=self.fake_B.detach().cpu().numpy()
+            
+            priorG = -1*torch.norm(self.fake_B-self.real_C)/(10**5)
+            print("priorG :", priorG)
         #self.grad = self.grad/torch.max(self.grad.abs())
-            self.fake_B.backward(self.grad) #switch on for physics based fwi
-            #priorG.backward()
-            #self.jac.backward()
+            self.jac.backward(retain_graph=True) #do I need to negate this?
+            self.fake_B.backward(self.grad,retain_graph=True) #switch on for physics based fwi
+            priorG.backward()
+
 
         
-        print("shape of down3 :", np.shape(self.down3))
-        print("shape of up2 :", np.shape(self.up2))
+        # print("shape of down3 :", np.shape(self.down3))
+        # print("shape of up2 :", np.shape(self.up2))
         #print("shape of fake_B :", np.shape(self.fake_B))
         #print("shape of grad :", np.shape(self.grad))   
         # if (epoch1 % 30 == 0): 
@@ -393,12 +420,12 @@ class AutoNFModel(BaseModel):
         #     filen = './marmousi24/Up1Int23Dec2AD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
         #     np.save(filen, self.up1.cpu().detach().numpy())  #switch on physics based fwi
             
-        
-        filen = './marmousi24/FakeAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
-        np.save(filen, self.fake_B.cpu().detach().numpy())  #switch on physics based fwi
-        #if (epoch1 == 52):
-        #    np.save('true_data.npy',self.real_A.cpu().detach().numpy())
-        #    np.save('true_model.npy',self.real_B.cpu().detach().numpy())
+        if (epoch1 % 10 == 0): 
+            filen = './MarmousiNF13/FakeAD' + str(batch)+'ep'+str(epoch1)+'.npy' #switch on for physics based fwi       
+            np.save(filen, self.fake_B.cpu().detach().numpy())  #switch on physics based fwi
+            #if (epoch1 == 52):
+            #    np.save('true_data.npy',self.real_A.cpu().detach().numpy())
+            #    np.save('true_model.npy',self.real_B.cpu().detach().numpy())
 
 
     def optimize_parameters(self, epoch, batch, lstart):

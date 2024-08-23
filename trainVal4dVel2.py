@@ -45,20 +45,21 @@ if __name__ == '__main__':
     visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
     total_iters = 0                # the total number of training iterations
     losses1 = OrderedDict()
-    lstart = 1000
+    # lstart = 1000
+    lstart=0
     for epoch in range(opt.epoch_count, opt.n_epochs + opt.n_epochs_decay + 1):    # outer loop for different epochs; we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>
          epoch_start_time = time.time()  # timer for entire epoch
          iter_data_time = time.time()    # timer for data loading per iteration
          epoch_iter = 0                  # the number of training iterations in current epoch, reset to 0 every epoch
          visualizer.reset()              # reset the visualizer: make sure it saves the results to HTML at least once every epoch
 
-         model.eval()  #For going to validation
-         Validationloss = 0.0
-         for k, data2 in enumerate(dataset2):
-             model.set_input(data2)
-             model.test()
-             model.compute_loss_only()
-             Validationloss = Validationloss + model.loss_V_MSE.item()
+        #  model.eval()  #For going to validation
+        #  Validationloss = 0.0
+        #  for k, data2 in enumerate(dataset2):
+        #      model.set_input(data2)
+        #      model.test()
+        #      model.compute_loss_only()
+        #      Validationloss = Validationloss + model.loss_V_MSE.item()
 
          #model.update_epoch(epoch)
          model.train()
@@ -66,7 +67,7 @@ if __name__ == '__main__':
          Modelloss = 0.0
          Dataloss = 0.0
          Model1loss = 0.0
-         #KLloss = 0.0
+         KLloss = 0.0
          for i, data in enumerate(dataset):  # inner loop within one epoch
              ##print("i: " + str(i))
              iter_start_time = time.time()  # timer for computation per iteration
@@ -110,17 +111,24 @@ if __name__ == '__main__':
 
              iter_data_time = time.time()
              Modelloss = Modelloss + model.loss_M_MSE.item()
-             Dataloss = Dataloss + model.loss_D_MSE
+             Dataloss = Dataloss + model.loss_D_MSE.item()
              if (epoch > lstart):
-                Model1loss = Model1loss + model.loss_M1_MSE.item()     
+                Model1loss = Model1loss + model.loss_M1_MSE     
              else:
                 Model1loss = Model1loss + model.loss_M1_MSE
                  
                 
-             #KLloss = KLloss + model.loss_K_MSE.item()
+             KLloss = KLloss + model.loss_K_MSE.item()
 
 
-         
+         model.eval()  #For going to validation
+         Validationloss = 0.0
+         for k, data2 in enumerate(dataset2):
+             model.set_input(data2)
+             model.test()
+             model.compute_loss_only()
+             Validationloss = Validationloss + model.loss_V_MSE.item()
+
          if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
              print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
              model.save_networks('latest')
@@ -133,14 +141,17 @@ if __name__ == '__main__':
 
         
          if epoch % opt.display_freq == 0:    #plot losses
+            #compute average losses (by dividing the losses by the size of the batch)
+            # print("k =" ,k, " i = ",i)
             losses1['Modelloss'] = Modelloss/(i+1)
             losses1['Dataloss'] = Dataloss/(i+1)
             losses1['Validationloss'] = Validationloss/(k+1)
             losses1['Model1loss'] = Model1loss/(i+1)
-            #losses1['KL divergence'] = KLloss/i
+            losses1['KL divergence'] = KLloss/(i+1)
             #print(losses1)
             #losses2 = model.get_current_losses()
             #print(losses2)
             visualizer.plot_current_losses(epoch, 0, losses1)
+            visualizer.print_current_losses(epoch, epoch_iter, losses1)
 
          print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))

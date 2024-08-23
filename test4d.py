@@ -34,7 +34,7 @@ from models import create_model
 from util.visualizer import save_images, save_matrix
 from util import html
 import shutil
-
+import numpy as np
 
 if __name__ == '__main__':
     opt = TestOptions().parse()  # get test options
@@ -64,15 +64,19 @@ if __name__ == '__main__':
     # test with eval mode. This only affects layers like batchnorm and dropout.
     # For [pix2pix]: we use batchnorm and dropout in the original pix2pix. You can experiment it with and without eval() mode.
     # For [CycleGAN]: It should not affect CycleGAN as CycleGAN uses instancenorm without dropout.
-    # if opt.eval:
-    #model.eval()
+    # if opt.eval: #ABDO: to check this, where this in the eval
+    # print("it is eval")
+    model.eval()
+    test_loss = np.zeros([opt.realization, 1])
+    
     for k in range(opt.realization):
-        print("realization :", str(k))
-        image_dir = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/PhysicsBasedFWI/vae38ccBigLatent16/Output' + str(k)
+        # print("realization :", str(k))
+        image_dir = '/disk/utig5/disk/fs4/abdo/PhysicsMLFWI/PhysicsBasedFWI/VaeVelCurvA2/Output' + str(k)
         shutil.rmtree(image_dir,ignore_errors=True)
         os.mkdir(image_dir)
+        overall_loss=0
         for i, data in enumerate(dataset):
-            print("i :"+str(i))
+            # print("i :"+str(i))
 #            if i >= opt.num_test:  # only apply our model to opt.num_test images.
 #                break
             model.set_input(data)  # unpack data from data loader
@@ -81,9 +85,15 @@ if __name__ == '__main__':
             img_path = model.get_image_paths()     # get image paths
             # print ("img_path-1= ", img_path)
             model.compute_loss_only()
+            # print("loss =",model.loss_V_MSE.item())
+            overall_loss+=model.loss_V_MSE.item()
             # if i % 5 == 0:  # save images to an HTML file
-            print('processing (%04d)-th image... %s' % (i, img_path))
+            # print('processing (%04d)-th image... %s' % (i, img_path))
             #save_images(webpage, visuals, img_path, aspect_ratio=opt.aspect_ratio, width=opt.display_winsize)
             save_matrix(visuals, img_path, k, aspect_ratio=opt.aspect_ratio,
                         width=opt.display_winsize)
+            
+        test_loss[k]=overall_loss/i
+        print("epoch= ",str(k),"   average test losses= ",test_loss[k])
+   
     # webpage.save()  # save the HTML

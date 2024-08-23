@@ -33,6 +33,7 @@ def find_model_using_name(model_name):
     modellib = importlib.import_module(model_filename)
     model = None
     target_model_name = model_name.replace('_', '') + 'model'
+    print("target_model_name =",target_model_name)
     for name, cls in modellib.__dict__.items():
         if name.lower() == target_model_name.lower() \
            and issubclass(cls, BaseModel):
@@ -47,6 +48,7 @@ def find_model_using_name(model_name):
 
 def get_option_setter(model_name):
     """Return the static method <modify_commandline_options> of the model class."""
+    print("my model name is ", model_name)
     model_class = find_model_using_name(model_name)
     return model_class.modify_commandline_options
 

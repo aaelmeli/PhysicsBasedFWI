@@ -46,9 +46,9 @@ def find_dataset_using_name2(dataset_name):
     be instantiated. It has to be a subclass of BaseDataset,
     and it is case-insensitive.
     """
-    print ("dataset name 2=",dataset_name)
+    # print ("dataset name 2=",dataset_name)
     dataset_filename = "data." + dataset_name + "Test_dataset"
-    print ("dataset_filename  2=",dataset_filename)
+    # print ("dataset_filename  2=",dataset_filename)
     datasetlib = importlib.import_module(dataset_filename)
 
     dataset = None
@@ -118,7 +118,7 @@ class CustomDatasetDataLoader():
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=opt.batch_size,
-            shuffle=True,
+            shuffle=False, 
             num_workers=int(opt.num_threads))
 
     def load_data(self):
@@ -151,8 +151,8 @@ class CustomDatasetValLoader():
         print("dataset [%s] was created" % type(self.dataset).__name__)
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
-            batch_size=1,
-            shuffle=False,
+            batch_size=1, #batch size is 1 (fixed)
+            shuffle=False, #no shuffle?!
             num_workers=int(opt.num_threads))
 
     def load_data(self):

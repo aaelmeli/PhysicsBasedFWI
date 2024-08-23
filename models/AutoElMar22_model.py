@@ -510,7 +510,7 @@ class AutoElMar22Model(BaseModel):
 
     def optimize_parameters(self, epoch, batch, lstart, freq, initerror, currenterror):
         num_shots = 35
-        idx = np.random.permutation(num_shots)
+        idx = np.random.permutation(num_shots) #so we can use the minibatch idea
         #idx = np.arange(0,num_shots)
         num_batches = 1
         for it in range(num_batches):
